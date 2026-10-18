@@ -39,7 +39,6 @@ export const AdminActionQueueView: React.FC = () => {
     assignCardFromWaitlist,
     confirmHandover,
     hrDecideOverBudget,
-    reloadAdminMockData,
   } = useApp();
 
   // CHỐT PHƯƠNG ÁN 1: 2 Tab Đi/Về (Cấp thẻ - Thu bill) làm giao diện chính thức duy nhất
@@ -765,20 +764,6 @@ export const AdminActionQueueView: React.FC = () => {
           >
             <Zap className="w-4 h-4 fill-white" />
             <span>⚡ Xuất thẻ nhanh tại quầy</span>
-          </button>
-
-          {/* Nút Nạp lại Mock Data */}
-          <button
-            type="button"
-            onClick={() => {
-              const res = reloadAdminMockData();
-              setFeedback(res);
-            }}
-            className="py-2 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-xs rounded-md flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-            title="Khôi phục 12 kịch bản mẫu phong phú bao quát tất cả các trường hợp"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-            <span>Nạp lại Mock Data</span>
           </button>
         </div>
 

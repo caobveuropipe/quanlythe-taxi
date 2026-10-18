@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TaxiRequest, CardCondition } from '../../types';
-import { OCR_PRESETS } from '../../data/seedData';
 import {
   X,
   CreditCard,
-  Scan,
   Edit3,
   Image as ImageIcon,
   AlertTriangle,
@@ -14,6 +12,7 @@ import {
   FileCheck,
   MapPin,
   DollarSign,
+  Upload,
 } from 'lucide-react';
 
 interface ReturnCardAndBillModalProps {
@@ -29,7 +28,6 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
 }) => {
   const { currentUser, config, confirmReturnAndBilling } = useApp();
 
-  const [inputMode, setInputMode] = useState<'manual' | 'ocr'>('manual');
   const [cardCondition, setCardCondition] = useState<CardCondition>('good');
   const [pickupPoint, setPickupPoint] = useState(request.tripDetails?.pickupPoint || 'Trụ sở văn phòng, Hoàn Kiếm');
   const [dropoffPoint, setDropoffPoint] = useState(request.tripDetails?.dropoffPoint || request.destination || '');
@@ -39,10 +37,8 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const [isCostMissing, setIsCostMissing] = useState(false);
   const [receiptNumber, setReceiptNumber] = useState(request.tripDetails?.receiptNumber || '');
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState<string | undefined>(
-    request.tripDetails?.receiptPhotoUrl || OCR_PRESETS[0].imageUrl
+    request.tripDetails?.receiptPhotoUrl || ''
   );
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(OCR_PRESETS[0].id);
-  const [ocrAppliedNotice, setOcrAppliedNotice] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const maxSpend = config.maxSpendPerTrip;
@@ -50,20 +46,15 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const isOverBudget = !isCostMissing && costNum > maxSpend;
   const overBudgetAmount = isOverBudget ? costNum - maxSpend : 0;
 
-  // Handle OCR preset simulation
-  const handleApplyOcr = (presetId: string) => {
-    const preset = OCR_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-
-    setSelectedPresetId(preset.id);
-    setReceiptPhotoUrl(preset.imageUrl);
-    // Fill suggested data into draft fields
-    setPickupPoint(preset.pickup);
-    setDropoffPoint(preset.dropoff);
-    setActualCostStr(String(preset.amount));
-    setReceiptNumber(preset.invoiceNo);
-    setIsCostMissing(false);
-    setOcrAppliedNotice(true);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setReceiptPhotoUrl(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -88,7 +79,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
       isCostMissing,
       receiptNumber,
       receiptPhotoUrl,
-      ocrSuggested: inputMode === 'ocr',
+      ocrSuggested: false,
       operatorName: currentUser.name,
     });
 
@@ -195,103 +186,50 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Phương thức nhập: Nhập tay hoặc OCR Demo */}
+          {/* 2. Ảnh chụp hóa đơn / cuống vé (tùy chọn) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                Phương thức nhập thông tin cước
+              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                <span>Ảnh chụp hóa đơn / biên lai (nếu có)</span>
               </span>
-              <div className="flex border border-slate-300 dark:border-slate-700 p-0.5 text-xs">
+              {receiptPhotoUrl && (
                 <button
                   type="button"
-                  onClick={() => setInputMode('manual')}
-                  className={`px-3 py-1 font-medium transition-colors ${
-                    inputMode === 'manual'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
+                  onClick={() => setReceiptPhotoUrl('')}
+                  className="text-[11px] text-rose-500 hover:underline"
                 >
-                  <span className="flex items-center gap-1">
-                    <Edit3 className="w-3 h-3" />
-                    <span>Nhập tay</span>
-                  </span>
+                  Xóa ảnh
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInputMode('ocr');
-                    handleApplyOcr(selectedPresetId);
-                  }}
-                  className={`px-3 py-1 font-medium transition-colors ${
-                    inputMode === 'ocr'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="flex items-center gap-1">
-                    <Scan className="w-3 h-3" />
-                    <span>Đọc từ ảnh (OCR demo)</span>
-                  </span>
-                </button>
-              </div>
+              )}
             </div>
 
-            {/* OCR Preset Selector & Image Preview */}
-            {inputMode === 'ocr' && (
-              <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                    <Scan className="w-4 h-4 text-blue-600" />
-                    <span>Chọn mẫu ảnh hóa đơn để quét OCR:</span>
-                  </div>
-                  <span className="text-[11px] text-blue-700 dark:text-blue-300 font-mono">
-                    (Mô phỏng OCR gợi ý)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {OCR_PRESETS.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => handleApplyOcr(p.id)}
-                      className={`p-2 text-left text-xs border transition-colors ${
-                        selectedPresetId === p.id
-                          ? 'bg-white dark:bg-slate-900 border-blue-600 shadow-xs ring-1 ring-blue-500'
-                          : 'bg-white/60 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-400'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-900 dark:text-white truncate">
-                        {p.name}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
-                        Số tiền: {p.amount.toLocaleString('vi-VN')} đ
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Show the original photo side/box */}
-                {receiptPhotoUrl && (
-                  <div className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-slate-500">
-                      <span>Ảnh hóa đơn gốc:</span>
-                      <span className="text-emerald-600 font-medium">Đã trích xuất dữ liệu gợi ý vào form</span>
-                    </div>
-                    <div className="max-h-44 overflow-hidden flex items-center justify-center bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
-                      <img
-                        src={receiptPhotoUrl}
-                        alt="Ảnh hóa đơn taxi"
-                        className="object-contain max-h-44 w-auto"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                  Quy tắc: Dữ liệu OCR chỉ điền gợi ý vào bản nháp. Người nhập được tự do sửa, kiểm tra lại số liệu trước khi bấm xác nhận lưu.
+            {receiptPhotoUrl ? (
+              <div className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 space-y-1.5">
+                <div className="max-h-48 overflow-hidden flex items-center justify-center bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                  <img
+                    src={receiptPhotoUrl}
+                    alt="Ảnh hóa đơn taxi"
+                    className="object-contain max-h-48 w-auto"
+                  />
                 </div>
               </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50 dark:bg-slate-900/50 cursor-pointer transition-colors">
+                <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Tải lên ảnh hóa đơn / cuống vé taxi
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5">
+                  Hỗ trợ định dạng JPG, PNG, WEBP
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
             )}
           </div>
 

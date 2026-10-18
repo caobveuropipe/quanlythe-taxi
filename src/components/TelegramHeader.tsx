@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserProfileModal } from './UserProfileModal';
-import { X, MoreVertical, User, Settings, Globe, Shield, MessageSquare, UserCheck } from 'lucide-react';
+import { X, MoreVertical, User, Settings, Globe, Shield, UserCheck } from 'lucide-react';
 
 interface TelegramHeaderProps {
   onOpenSettings?: () => void;
   onOpenWebPortal?: () => void;
-  onOpenBotSample?: () => void;
   onOpenUserApprovals?: () => void;
   pendingUsersCount?: number;
 }
@@ -14,7 +13,6 @@ interface TelegramHeaderProps {
 export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
   onOpenSettings,
   onOpenWebPortal,
-  onOpenBotSample,
   onOpenUserApprovals,
   pendingUsersCount = 0,
 }) => {
@@ -132,19 +130,6 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
                     <span>Cổng chờ Web Admin</span>
                   </button>
                 </>
-              )}
-
-              {isLeader && onOpenBotSample && (
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    onOpenBotSample();
-                  }}
-                  className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Mẫu tin Telegram Bot</span>
-                </button>
               )}
 
               <button

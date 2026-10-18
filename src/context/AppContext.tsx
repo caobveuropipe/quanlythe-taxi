@@ -88,8 +88,6 @@ interface AppContextType {
   deleteCard: (cardId: string) => { success: boolean; message: string };
   updateCardStatus: (cardId: string, status: TaxiCard['status'], note?: string) => void;
   resetAllData: () => void;
-  reloadAdminMockData: () => { success: boolean; message: string };
-  runScenario: (scenarioId: string) => void;
 
   // User Management & Onboarding Actions
   registerUser: (params: {
@@ -1343,48 +1341,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRequests(INITIAL_REQUESTS);
   };
 
-  // 12.1. Reload Admin Mock Data (keeps current Admin user, refreshes all requests and cards)
-  const reloadAdminMockData = () => {
-    localStorage.removeItem(`${STORAGE_KEY}_cards`);
-    localStorage.removeItem(`${STORAGE_KEY}_requests`);
-    localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(INITIAL_CARDS));
-    localStorage.setItem(`${STORAGE_KEY}_requests`, JSON.stringify(INITIAL_REQUESTS));
-    setCards(INITIAL_CARDS);
-    setRequests(INITIAL_REQUESTS);
-    return { success: true, message: 'Đã nạp đầy đủ Mock Data mẫu cho tất cả các tab thành công!' };
-  };
-
-  // 13. Preset scenarios for testing
-  const runScenario = (scenarioId: string) => {
-    switch (scenarioId) {
-      case 'scenario_leader_flow':
-        // Switch to Employee user-01, ensure leader toggle is ON
-        setConfig((prev) => ({ ...prev, requireLeaderApproval: true }));
-        setCurrentUser(users[0]);
-        break;
-      case 'scenario_out_of_cards':
-        // Set all cards to in_use or damaged
-        setCards((prev) =>
-          prev.map((c) => ({
-            ...c,
-            status: 'in_use',
-            assignedToName: 'Nhân viên khác',
-          }))
-        );
-        setCurrentUser(users[3]); // Admin kiêm HR
-        break;
-      case 'scenario_overbudget_review':
-        // Switch to HR / Admin kiêm HR to see pending over-budget review
-        setCurrentUser(users[3]); // Lê Hoàng Nam (Admin & HR)
-        break;
-      case 'scenario_holding_return':
-        // Switch to Admin kiêm HR to process REQ-2026-098 (Nguyễn Văn A is holding card)
-        setCurrentUser(users[3]);
-        break;
-      default:
-        break;
-    }
-  };
 
   // 14. User Management Actions
   const registerUser = async (params: {
@@ -1575,8 +1531,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteCard,
         updateCardStatus,
         resetAllData,
-        reloadAdminMockData,
-        runScenario,
         registerUser,
         approveUser,
         rejectUser,
