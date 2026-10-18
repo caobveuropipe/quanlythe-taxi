@@ -131,35 +131,41 @@ export const AdminSettingsView: React.FC = () => {
         </div>
 
         <div className="space-y-2 text-xs">
-          {leaderMappings.map((m) => (
-            <div
-              key={m.department}
-              className="p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
-            >
-              <div>
-                <div className="font-semibold text-slate-900 dark:text-white">
-                  {m.department}
-                </div>
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                  <Send className="w-3 h-3 text-blue-500" />
-                  <span>Leader: <strong>{m.leaderName}</strong> ({m.leaderTelegramUsername})</span>
-                  <span className="font-mono text-slate-400">ID: {m.leaderTelegramId}</span>
-                </div>
-              </div>
-
-              <div>
-                {m.botActive ? (
-                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300">
-                    Bot đã kích hoạt
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-300" title="Chưa kích hoạt bot">
-                    Chưa bật Bot
-                  </span>
-                )}
-              </div>
+          {leaderMappings.length === 0 ? (
+            <div className="p-3 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 text-[11px]">
+              Chưa có cấu hình ánh xạ Leader. Khi các Leader đăng ký thành viên và được Admin duyệt, danh sách sẽ hiển thị tại đây.
             </div>
-          ))}
+          ) : (
+            leaderMappings.map((m) => (
+              <div
+                key={m.department}
+                className="p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+              >
+                <div>
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    {m.department}
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                    <Send className="w-3 h-3 text-blue-500" />
+                    <span>Leader: <strong>{m.leaderName}</strong> ({m.leaderTelegramUsername})</span>
+                    <span className="font-mono text-slate-400">ID: {m.leaderTelegramId}</span>
+                  </div>
+                </div>
+
+                <div>
+                  {m.botActive ? (
+                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300">
+                      Bot đã kích hoạt
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-300" title="Chưa kích hoạt bot">
+                      Chưa bật Bot
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

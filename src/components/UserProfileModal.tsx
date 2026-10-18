@@ -7,17 +7,6 @@ interface UserProfileModalProps {
   onClose: () => void;
 }
 
-const COMMON_DEPARTMENTS = [
-  'Ban Giám Đốc & Quản Trị',
-  'Ban Quản Trị & Vận Hành',
-  'Phòng Kinh Doanh',
-  'Phòng Marketing',
-  'Phòng Kỹ Thuật & Sản Phẩm',
-  'Phòng Công Nghệ',
-  'Phòng Hành Chính Nhân Sự',
-  'Phòng Kế Toán - Tài Chính',
-];
-
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, updateUserProfile } = useApp();
 
@@ -25,8 +14,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const [editName, setEditName] = useState(currentUser.name);
   const [editCode, setEditCode] = useState(currentUser.code);
   const [editDepartment, setEditDepartment] = useState(currentUser.department);
-  const [isCustomDept, setIsCustomDept] = useState(false);
-  const [customDeptInput, setCustomDeptInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -35,13 +22,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
       setEditName(currentUser.name);
       setEditCode(currentUser.code);
       setEditDepartment(currentUser.department);
-      if (currentUser.department && !COMMON_DEPARTMENTS.includes(currentUser.department)) {
-        setIsCustomDept(true);
-        setCustomDeptInput(currentUser.department);
-      } else {
-        setIsCustomDept(false);
-        setCustomDeptInput('');
-      }
       setIsEditing(false);
       setFeedback(null);
     }
@@ -53,7 +33,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     e.preventDefault();
     setFeedback(null);
 
-    const finalDept = isCustomDept ? customDeptInput.trim() : editDepartment.trim();
     if (!editName.trim()) {
       setFeedback({ success: false, message: 'Họ và tên không được để trống!' });
       return;
@@ -62,8 +41,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
       setFeedback({ success: false, message: 'Mã nhân sự không được để trống!' });
       return;
     }
-    if (!finalDept) {
-      setFeedback({ success: false, message: 'Vui lòng chọn hoặc nhập phòng ban!' });
+    if (!editDepartment.trim()) {
+      setFeedback({ success: false, message: 'Vui lòng nhập Bộ phận / Phòng ban!' });
       return;
     }
 
@@ -71,7 +50,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     const res = await updateUserProfile(currentUser.id, {
       name: editName.trim(),
       code: editCode.trim().toUpperCase(),
-      department: finalDept,
+      department: editDepartment.trim(),
     });
     setSaving(false);
 
@@ -179,36 +158,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                 Bộ phận / Phòng ban <span className="text-rose-500">*</span>
               </label>
-              <select
-                value={isCustomDept ? 'custom' : editDepartment}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsCustomDept(true);
-                  } else {
-                    setIsCustomDept(false);
-                    setEditDepartment(e.target.value);
-                  }
-                }}
-                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 mb-1"
-              >
-                {COMMON_DEPARTMENTS.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-                <option value="custom">✏️ Nhập phòng ban khác...</option>
-              </select>
-
-              {isCustomDept && (
-                <input
-                  type="text"
-                  required
-                  value={customDeptInput}
-                  onChange={(e) => setCustomDeptInput(e.target.value)}
-                  placeholder="Nhập tên bộ phận / phòng ban mới..."
-                  className="w-full p-2 bg-white dark:bg-slate-800 border border-blue-400 dark:border-blue-600 text-slate-900 dark:text-white focus:outline-hidden mt-1.5"
-                />
-              )}
+              <input
+                type="text"
+                required
+                value={editDepartment}
+                onChange={(e) => setEditDepartment(e.target.value)}
+                placeholder="Nhập tên Bộ phận / Phòng ban của bạn..."
+                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium"
+              />
             </div>
 
             <div className="pt-2 flex gap-2">
@@ -239,7 +196,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                 Họ và tên
               </label>
               <div className="font-semibold text-slate-900 dark:text-slate-100">
-                {currentUser.name}
+                {currentUser.name || '(Chưa cập nhật)'}
               </div>
             </div>
 
@@ -249,7 +206,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   Mã nhân sự
                 </label>
                 <div className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                  {currentUser.code}
+                  {currentUser.code || '(Chưa có)'}
                 </div>
               </div>
 
@@ -272,7 +229,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                 Bộ phận / Phòng ban
               </label>
               <div className="font-medium text-slate-800 dark:text-slate-200">
-                {currentUser.department}
+                {currentUser.department || '(Chưa cập nhật phòng ban)'}
               </div>
             </div>
 
@@ -285,7 +242,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   <Send className="w-4 h-4 text-blue-500" />
                   <div>
                     <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                      {currentUser.telegramUsername}
+                      {currentUser.telegramUsername || '@chua_co_username'}
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
                       ID: {currentUser.telegramId}

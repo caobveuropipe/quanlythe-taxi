@@ -28,16 +28,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
 
-  const departments = [
-    'Phòng Kinh Doanh',
-    'Phòng Marketing',
-    'Phòng Kỹ Thuật & Sản Phẩm',
-    'Phòng Công Nghệ',
-    'Phòng Hành Chính Nhân Sự',
-    'Phòng Kế Toán - Tài Chính',
-    'Ban Giám Đốc / Điều Hành',
-    'Bộ phận khác',
-  ];
+
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,23 +240,19 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
           <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
             3. Bộ phận / Phòng ban <span className="text-rose-500">*</span>
           </label>
-          <select
+          <input
+            type="text"
+            required
             value={department}
             onChange={(e) => {
               setDepartment(e.target.value);
               if (errors.department) setErrors((prev) => ({ ...prev, department: '' }));
             }}
+            placeholder="Nhập tên Bộ phận / Phòng ban (VD: Phòng Kinh Doanh)..."
             className={`w-full p-2.5 bg-white dark:bg-slate-800 border ${
               errors.department ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 dark:border-slate-700'
             } text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500`}
-          >
-            <option value="">-- Chọn phòng ban --</option>
-            {departments.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+          />
           {errors.department && (
             <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" /> {errors.department}

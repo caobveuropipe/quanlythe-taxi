@@ -274,6 +274,15 @@ export const supabaseService = {
     }
   },
 
+  // Delete user
+  async deleteUser(userId: string) {
+    try {
+      await supabase.from('users').delete().eq('id', userId);
+    } catch (e) {
+      console.warn('Supabase deleteUser error:', e);
+    }
+  },
+
   // Realtime subscription for users
   subscribeToUsers(onUpdate: (payload: any) => void) {
     return supabase

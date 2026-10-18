@@ -113,21 +113,28 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'taxicard_app_data_v3';
+const MOCK_USER_IDS = new Set(['user-01', 'user-02', 'user-03', 'user-04', 'user-05', 'user-06']);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<UserProfile[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      try {
+        const parsed: UserProfile[] = JSON.parse(saved);
+        const filtered = parsed.filter((u) => !MOCK_USER_IDS.has(u.id));
+        if (filtered.length > 0) return filtered;
+      } catch {}
+    }
+    return INITIAL_USERS;
   });
 
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     const savedId = localStorage.getItem(`${STORAGE_KEY}_currentUserId`);
-    if (savedId) {
+    if (savedId && !MOCK_USER_IDS.has(savedId)) {
       const found = users.find((u) => u.id === savedId);
       if (found) return found;
     }
-    // Default to Employee user-01
-    return users[0];
+    return users[0] || INITIAL_USERS[0];
   });
 
   const [config, setConfig] = useState<AppConfig>(() => {
@@ -228,9 +235,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Load users from Supabase
         const dbUsers = await supabaseService.getUsers();
         if (dbUsers && dbUsers.length > 0) {
-          setUsers(dbUsers);
+          const cleaned = dbUsers.filter((u) => !MOCK_USER_IDS.has(u.id));
+          const hasMock = dbUsers.some((u) => MOCK_USER_IDS.has(u.id));
+          if (hasMock) {
+            for (const mockId of Array.from(MOCK_USER_IDS)) {
+              supabaseService.deleteUser(mockId).catch(() => {});
+            }
+          }
+          if (cleaned.length > 0) {
+            setUsers(cleaned);
+          } else {
+            setUsers(INITIAL_USERS);
+            for (const u of INITIAL_USERS) {
+              await supabaseService.upsertUser(u);
+            }
+          }
         } else {
-          // If remote users is empty, seed initial admin users
+          // If remote users is empty, seed initial admin user
           for (const u of INITIAL_USERS) {
             await supabaseService.upsertUser(u);
           }
