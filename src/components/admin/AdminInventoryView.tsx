@@ -17,10 +17,12 @@ import {
   RotateCcw,
   Search,
   Zap,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 export const AdminInventoryView: React.FC = () => {
-  const { currentUser, cards, requests, addCard, updateCardStatus } = useApp();
+  const { currentUser, cards, requests, addCard, editCard, deleteCard, updateCardStatus } = useApp();
 
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showAddCardModal, setShowAddCardModal] = useState(false);
@@ -29,6 +31,16 @@ export const AdminInventoryView: React.FC = () => {
   const [newCardCode, setNewCardCode] = useState('');
   const [newCardNote, setNewCardNote] = useState('');
   const [addFeedback, setAddFeedback] = useState<string | null>(null);
+
+  // Edit card state
+  const [editingCard, setEditingCard] = useState<TaxiCard | null>(null);
+  const [editCode, setEditCode] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editCondition, setEditCondition] = useState<CardCondition>('good');
+  const [editStatus, setEditStatus] = useState<CardStatus>('available');
+
+  // Delete card confirmation state
+  const [deletingCard, setDeletingCard] = useState<TaxiCard | null>(null);
 
   // Return & bill modal trigger directly from card
   const [selectedReqForReturn, setSelectedReqForReturn] = useState<any | null>(null);
@@ -278,9 +290,37 @@ export const AdminInventoryView: React.FC = () => {
                     </div>
                   </div>
 
-                  <span className={`px-2 py-0.5 text-[10px] font-semibold border ${badge.color}`}>
-                    {badge.label}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-2 py-0.5 text-[10px] font-semibold border ${badge.color}`}>
+                      {badge.label}
+                    </span>
+
+                    {/* Edit card button */}
+                    <button
+                      onClick={() => {
+                        setEditingCard(card);
+                        setEditCode(card.code);
+                        setEditNote(card.note || '');
+                        setEditCondition(card.condition);
+                        setEditStatus(card.status);
+                      }}
+                      className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                      title="Sửa thông tin thẻ"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Delete card button (only if not currently assigned) */}
+                    {card.status !== 'in_use' && card.status !== 'reserved' && (
+                      <button
+                        onClick={() => setDeletingCard(card)}
+                        className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                        title="Xóa thẻ khỏi kho"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Additional holder details if in_use or reserved */}
@@ -444,6 +484,157 @@ export const AdminInventoryView: React.FC = () => {
           setPreselectedCardCode(undefined);
         }}
       />
+
+      {/* Edit Card Modal */}
+      {editingCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-4 animate-in fade-in zoom-in-95 duration-150 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                <Pencil className="w-4 h-4 text-blue-500" />
+                <span>Chỉnh sửa thông tin thẻ {editingCard.code}</span>
+              </div>
+              <button
+                onClick={() => setEditingCard(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editCode.trim()) return;
+                const res = editCard(editingCard.id, {
+                  code: editCode.trim().toUpperCase(),
+                  note: editNote.trim(),
+                  condition: editCondition,
+                  status: editStatus,
+                });
+                if (res.success) {
+                  setEditingCard(null);
+                }
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                  Mã thẻ vật lý
+                </label>
+                <input
+                  type="text"
+                  value={editCode}
+                  onChange={(e) => setEditCode(e.target.value)}
+                  className="w-full p-2 font-mono font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white uppercase"
+                  placeholder="VD: TAXI-01"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                  Ghi chú hãng xe / loại thẻ
+                </label>
+                <input
+                  type="text"
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                  placeholder="VD: Mai Linh Taxi VIP"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                    Tình trạng vật lý
+                  </label>
+                  <select
+                    value={editCondition}
+                    onChange={(e) => setEditCondition(e.target.value as CardCondition)}
+                    className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                  >
+                    <option value="good">Tốt</option>
+                    <option value="scratched">Trầy xước</option>
+                    <option value="broken">Hỏng dải từ</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                    Trạng thái kho
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as CardStatus)}
+                    disabled={editingCard.status === 'in_use' || editingCard.status === 'reserved'}
+                    className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
+                  >
+                    <option value="available">Sẵn sàng (Kho)</option>
+                    <option value="damaged">Hỏng / Tạm khóa</option>
+                    <option value="lost">Mất thẻ</option>
+                    {editingCard.status === 'in_use' && <option value="in_use">Đang dùng</option>}
+                    {editingCard.status === 'reserved' && <option value="reserved">Đã giữ</option>}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingCard(null)}
+                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow-xs"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Card Confirmation Modal */}
+      {deletingCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-4 animate-in fade-in zoom-in-95 duration-150 space-y-3 text-xs">
+            <div className="flex items-center gap-2 text-rose-600 font-bold">
+              <Trash2 className="w-4 h-4 shrink-0" />
+              <span>Xác nhận xóa thẻ {deletingCard.code}?</span>
+            </div>
+
+            <p className="text-slate-600 dark:text-slate-400 leading-normal">
+              Bạn có chắc chắn muốn xóa vĩnh viễn thẻ <strong className="text-slate-900 dark:text-white font-mono">{deletingCard.code}</strong> khỏi hệ thống kho? Hành động này sẽ được đồng bộ xóa trên CSDL Supabase.
+            </p>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeletingCard(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded"
+              >
+                Không xóa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCard(deletingCard.id);
+                  setDeletingCard(null);
+                }}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-xs"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -84,6 +84,8 @@ interface AppContextType {
   }) => { success: boolean; message: string };
   hrDecideOverBudget: (requestId: string, decision: 'accepted' | 'rejected', reason: string, hrName: string) => { success: boolean; message: string };
   addCard: (code: string, note?: string) => { success: boolean; message: string };
+  editCard: (cardId: string, data: { code?: string; note?: string; condition?: CardCondition; status?: TaxiCard['status'] }) => { success: boolean; message: string };
+  deleteCard: (cardId: string) => { success: boolean; message: string };
   updateCardStatus: (cardId: string, status: TaxiCard['status'], note?: string) => void;
   resetAllData: () => void;
   reloadAdminMockData: () => { success: boolean; message: string };
@@ -1270,6 +1272,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const editCard = (
+    cardId: string,
+    data: { code?: string; note?: string; condition?: CardCondition; status?: TaxiCard['status'] }
+  ) => {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) {
+      return { success: false, message: 'Không tìm thấy thẻ cần chỉnh sửa!' };
+    }
+
+    if (data.code && data.code.trim().toUpperCase() !== card.code) {
+      const formatted = data.code.trim().toUpperCase();
+      const duplicate = cards.find((c) => c.id !== cardId && c.code === formatted);
+      if (duplicate) {
+        return { success: false, message: `Mã thẻ ${formatted} đã tồn tại trong hệ thống!` };
+      }
+    }
+
+    const updatedCard: TaxiCard = {
+      ...card,
+      code: data.code ? data.code.trim().toUpperCase() : card.code,
+      note: data.note !== undefined ? data.note.trim() : card.note,
+      condition: data.condition !== undefined ? data.condition : card.condition,
+      status: data.status !== undefined ? data.status : card.status,
+    };
+
+    setCards((prev) => prev.map((c) => (c.id === cardId ? updatedCard : c)));
+    supabaseService.upsertCards([updatedCard]).catch(() => {});
+
+    return { success: true, message: `Đã cập nhật thông tin thẻ ${updatedCard.code} thành công!` };
+  };
+
+  const deleteCard = (cardId: string) => {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) {
+      return { success: false, message: 'Không tìm thấy thẻ cần xóa!' };
+    }
+
+    if (card.status === 'in_use') {
+      return {
+        success: false,
+        message: `Không thể xóa thẻ ${card.code} vì thẻ đang được bàn giao cho nhân sự sử dụng!`,
+      };
+    }
+
+    if (card.status === 'reserved') {
+      return {
+        success: false,
+        message: `Không thể xóa thẻ ${card.code} vì thẻ đang được giữ cho một đơn chờ nhận!`,
+      };
+    }
+
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
+    supabaseService.deleteCard(cardId).catch(() => {});
+
+    return { success: true, message: `Đã xóa thẻ ${card.code} khỏi kho thành công!` };
+  };
+
   // 12. Reset all data
   const resetAllData = () => {
     localStorage.removeItem(`${STORAGE_KEY}_users`);
@@ -1512,6 +1571,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmReturnAndBilling,
         hrDecideOverBudget,
         addCard,
+        editCard,
+        deleteCard,
         updateCardStatus,
         resetAllData,
         reloadAdminMockData,

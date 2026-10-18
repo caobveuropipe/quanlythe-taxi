@@ -240,6 +240,15 @@ export const supabaseService = {
       .subscribe();
   },
 
+  // Delete card
+  async deleteCard(cardId: string) {
+    try {
+      await supabase.from('taxi_cards').delete().eq('id', cardId);
+    } catch (e) {
+      console.warn('Supabase deleteCard error:', e);
+    }
+  },
+
   // Fetch all users
   async getUsers(): Promise<UserProfile[] | null> {
     try {
