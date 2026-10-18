@@ -103,6 +103,10 @@ interface AppContextType {
     options?: { createNewLeaderFromName?: string }
   ) => { success: boolean; message: string };
   rejectUser: (userId: string) => { success: boolean; message: string };
+  updateUserProfile: (
+    userId: string,
+    updates: Partial<UserProfile>
+  ) => Promise<{ success: boolean; message: string }>;
   resetToNewRegistration: () => void;
 }
 
@@ -1478,6 +1482,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
+  const updateUserProfile = async (
+    userId: string,
+    updates: Partial<UserProfile>
+  ) => {
+    const existing = users.find((u) => u.id === userId);
+    if (!existing) {
+      return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
+    }
+    const updatedUser: UserProfile = {
+      ...existing,
+      ...updates,
+    };
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    if (currentUser.id === userId) {
+      setCurrentUser(updatedUser);
+      localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(updatedUser));
+    }
+    localStorage.setItem(
+      `${STORAGE_KEY}_users`,
+      JSON.stringify(users.map((u) => (u.id === userId ? updatedUser : u)))
+    );
+
+    // Sync to Supabase
+    try {
+      await supabaseService.upsertUser(updatedUser);
+    } catch (e) {
+      console.warn('Sync updateUserProfile to Supabase error:', e);
+    }
+
+    return { success: true, message: 'Cập nhật thông tin hồ sơ thành công!' };
+  };
+
   const resetToNewRegistration = () => {
     const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
     setCurrentUser({
@@ -1534,6 +1570,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerUser,
         approveUser,
         rejectUser,
+        updateUserProfile,
         resetToNewRegistration,
       }}
     >

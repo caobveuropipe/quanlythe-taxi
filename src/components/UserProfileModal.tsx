@@ -1,25 +1,96 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { User, CheckCircle2, AlertCircle, X, Shield, Send } from 'lucide-react';
+import { User, CheckCircle2, AlertCircle, X, Send, Pencil, Check } from 'lucide-react';
 
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+const COMMON_DEPARTMENTS = [
+  'Ban Giám Đốc & Quản Trị',
+  'Ban Quản Trị & Vận Hành',
+  'Phòng Kinh Doanh',
+  'Phòng Marketing',
+  'Phòng Kỹ Thuật & Sản Phẩm',
+  'Phòng Công Nghệ',
+  'Phòng Hành Chính Nhân Sự',
+  'Phòng Kế Toán - Tài Chính',
+];
+
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser } = useApp();
+  const { currentUser, updateUserProfile } = useApp();
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(currentUser.name);
+  const [editCode, setEditCode] = useState(currentUser.code);
+  const [editDepartment, setEditDepartment] = useState(currentUser.department);
+  const [isCustomDept, setIsCustomDept] = useState(false);
+  const [customDeptInput, setCustomDeptInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setEditName(currentUser.name);
+      setEditCode(currentUser.code);
+      setEditDepartment(currentUser.department);
+      if (currentUser.department && !COMMON_DEPARTMENTS.includes(currentUser.department)) {
+        setIsCustomDept(true);
+        setCustomDeptInput(currentUser.department);
+      } else {
+        setIsCustomDept(false);
+        setCustomDeptInput('');
+      }
+      setIsEditing(false);
+      setFeedback(null);
+    }
+  }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
 
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFeedback(null);
+
+    const finalDept = isCustomDept ? customDeptInput.trim() : editDepartment.trim();
+    if (!editName.trim()) {
+      setFeedback({ success: false, message: 'Họ và tên không được để trống!' });
+      return;
+    }
+    if (!editCode.trim()) {
+      setFeedback({ success: false, message: 'Mã nhân sự không được để trống!' });
+      return;
+    }
+    if (!finalDept) {
+      setFeedback({ success: false, message: 'Vui lòng chọn hoặc nhập phòng ban!' });
+      return;
+    }
+
+    setSaving(true);
+    const res = await updateUserProfile(currentUser.id, {
+      name: editName.trim(),
+      code: editCode.trim().toUpperCase(),
+      department: finalDept,
+    });
+    setSaving(false);
+
+    if (res.success) {
+      setFeedback({ success: true, message: 'Đã cập nhật và lưu hồ sơ thành công!' });
+      setIsEditing(false);
+    } else {
+      setFeedback({ success: false, message: res.message });
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-5 animate-in fade-in zoom-in-95 duration-150">
+      <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-5 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
-              {currentUser.name.charAt(0)}
+              {currentUser.name ? currentUser.name.charAt(0) : 'U'}
             </div>
             <div>
               <h3 className="font-semibold text-sm text-slate-900 dark:text-white">
@@ -38,83 +109,216 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
-        {/* Content: Only shows Name, Employee Code, Department, Telegram Linked Status */}
-        <div className="py-4 space-y-3 text-sm">
-          <div>
-            <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
-              Họ và tên
-            </label>
-            <div className="font-semibold text-slate-900 dark:text-slate-100">
-              {currentUser.name}
-            </div>
+        {/* Feedback message */}
+        {feedback && (
+          <div
+            className={`mt-3 p-2.5 text-xs flex items-center gap-2 border rounded ${
+              feedback.success
+                ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                : 'bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+            }`}
+          >
+            {feedback.success ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
           </div>
+        )}
 
-          <div className="grid grid-cols-2 gap-3">
+        {/* Content: View Mode or Edit Mode */}
+        {isEditing ? (
+          <form onSubmit={handleSave} className="py-4 space-y-3 text-xs">
             <div>
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
-                Mã nhân sự
+              <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Họ và tên <span className="text-rose-500">*</span>
               </label>
-              <div className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                {currentUser.code}
+              <input
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="VD: Van Cao - CCL"
+                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Mã nhân sự <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCode}
+                  onChange={(e) => setEditCode(e.target.value.toUpperCase())}
+                  placeholder="VD: ADMIN-01"
+                  className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-mono font-medium"
+                />
               </div>
-            </div>
 
-            <div>
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
-                Vai trò hệ thống
-              </label>
-              <div className="font-medium text-slate-800 dark:text-slate-200">
-                {currentUser.role === 'employee' && 'Nhân sự'}
-                {currentUser.role === 'leader' && 'Leader duyệt'}
-                {currentUser.role === 'admin' && 'Admin'}
-                {currentUser.role === 'hr' && 'HR Vận hành'}
-                {currentUser.role === 'admin_hr' && 'Admin kiêm HR'}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
-              Bộ phận / Phòng ban
-            </label>
-            <div className="font-medium text-slate-800 dark:text-slate-200">
-              {currentUser.department}
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-            <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1">
-              Trạng thái liên kết Telegram
-            </label>
-            <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-              <div className="flex items-center gap-2">
-                <Send className="w-4 h-4 text-blue-500" />
-                <div>
-                  <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                    {currentUser.telegramUsername}
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-mono">
-                    ID: {currentUser.telegramId}
-                  </div>
+              <div>
+                <label className="font-semibold text-slate-500 dark:text-slate-400 block mb-1">
+                  Vai trò (Cố định)
+                </label>
+                <div className="p-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium truncate">
+                  {currentUser.role === 'admin_hr'
+                    ? 'Admin kiêm HR'
+                    : currentUser.role === 'leader'
+                    ? 'Leader'
+                    : currentUser.role === 'admin'
+                    ? 'Admin'
+                    : 'Nhân sự'}
                 </div>
               </div>
-              <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Đã liên kết</span>
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Bộ phận / Phòng ban <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={isCustomDept ? 'custom' : editDepartment}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setIsCustomDept(true);
+                  } else {
+                    setIsCustomDept(false);
+                    setEditDepartment(e.target.value);
+                  }
+                }}
+                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 mb-1"
+              >
+                {COMMON_DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+                <option value="custom">✏️ Nhập phòng ban khác...</option>
+              </select>
+
+              {isCustomDept && (
+                <input
+                  type="text"
+                  required
+                  value={customDeptInput}
+                  onChange={(e) => setCustomDeptInput(e.target.value)}
+                  placeholder="Nhập tên bộ phận / phòng ban mới..."
+                  className="w-full p-2 bg-white dark:bg-slate-800 border border-blue-400 dark:border-blue-600 text-slate-900 dark:text-white focus:outline-hidden mt-1.5"
+                />
+              )}
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditing(false);
+                  setFeedback(null);
+                }}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{saving ? 'Đang lưu...' : 'Lưu thay đổi'}</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="py-4 space-y-3 text-sm">
+            <div>
+              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
+                Họ và tên
+              </label>
+              <div className="font-semibold text-slate-900 dark:text-slate-100">
+                {currentUser.name}
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Footer */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="w-full py-2 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-medium text-xs transition-colors"
-          >
-            Đóng hồ sơ
-          </button>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
+                  Mã nhân sự
+                </label>
+                <div className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                  {currentUser.code}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
+                  Vai trò hệ thống
+                </label>
+                <div className="font-medium text-slate-800 dark:text-slate-200">
+                  {currentUser.role === 'employee' && 'Nhân sự'}
+                  {currentUser.role === 'leader' && 'Leader duyệt'}
+                  {currentUser.role === 'admin' && 'Admin'}
+                  {currentUser.role === 'hr' && 'HR Vận hành'}
+                  {currentUser.role === 'admin_hr' && 'Admin kiêm HR'}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-0.5">
+                Bộ phận / Phòng ban
+              </label>
+              <div className="font-medium text-slate-800 dark:text-slate-200">
+                {currentUser.department}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mb-1">
+                Trạng thái liên kết Telegram
+              </label>
+              <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                <div className="flex items-center gap-2">
+                  <Send className="w-4 h-4 text-blue-500" />
+                  <div>
+                    <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                      {currentUser.telegramUsername}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      ID: {currentUser.telegramId}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Đã liên kết</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer buttons */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-700"
+              >
+                <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                <span>Chỉnh sửa hồ sơ</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-medium text-xs transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
