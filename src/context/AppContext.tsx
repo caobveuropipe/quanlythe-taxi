@@ -26,7 +26,7 @@ import {
   INITIAL_CARDS,
   INITIAL_REQUESTS,
 } from '../data/seedData';
-import { supabaseService, fromDbRequest, fromDbCard } from '../services/supabaseService';
+import { supabaseService, fromDbRequest, fromDbCard, fromDbUser } from '../services/supabaseService';
 import { supabase } from '../lib/supabaseClient';
 
 interface AppContextType {
@@ -88,6 +88,22 @@ interface AppContextType {
   resetAllData: () => void;
   reloadAdminMockData: () => { success: boolean; message: string };
   runScenario: (scenarioId: string) => void;
+
+  // User Management & Onboarding Actions
+  registerUser: (params: {
+    code: string;
+    name: string;
+    department: string;
+    leaderName: string;
+    telegramId?: string;
+    telegramUsername?: string;
+  }) => Promise<{ success: boolean; message: string }>;
+  approveUser: (
+    userId: string,
+    options?: { createNewLeaderFromName?: string }
+  ) => { success: boolean; message: string };
+  rejectUser: (userId: string) => { success: boolean; message: string };
+  resetToNewRegistration: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -192,6 +208,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     let cardChannel: any;
     let requestChannel: any;
+    let userChannel: any;
 
     async function initSupabase() {
       try {
@@ -203,6 +220,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         setSupabaseStatus('connected');
+
+        // Load users from Supabase
+        const dbUsers = await supabaseService.getUsers();
+        if (dbUsers && dbUsers.length > 0) {
+          setUsers(dbUsers);
+        } else {
+          // If remote users is empty, seed initial admin users
+          for (const u of INITIAL_USERS) {
+            await supabaseService.upsertUser(u);
+          }
+        }
+
+        // Auto-detect Telegram WebApp identity if running inside Telegram
+        const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
+        if (tg?.id) {
+          const tgIdStr = String(tg.id);
+          const activeList = dbUsers && dbUsers.length > 0 ? dbUsers : users;
+          const matched = activeList.find((u) => u.telegramId === tgIdStr);
+          if (matched) {
+            setCurrentUser(matched);
+          } else {
+            // New unregistered user opening via Telegram
+            setCurrentUser({
+              id: `unregistered-${tgIdStr}`,
+              name: `${tg.first_name || ''} ${tg.last_name || ''}`.trim() || 'Người dùng mới',
+              code: '',
+              department: '',
+              telegramUsername: tg.username ? `@${tg.username}` : '',
+              telegramId: tgIdStr,
+              role: 'pending',
+            });
+          }
+        }
 
         // Load cards from Supabase
         const dbCards = await supabaseService.getCards();
@@ -222,7 +272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await supabaseService.upsertRequests(INITIAL_REQUESTS);
         }
 
-        // Realtime updates: whenever any other user changes requests or cards
+        // Realtime updates: requests
         requestChannel = supabaseService.subscribeToRequests((payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
             const newReq = fromDbRequest(payload.new);
@@ -238,10 +288,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
+        // Realtime updates: cards
         cardChannel = supabaseService.subscribeToCards((payload) => {
           if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
             const updatedCard = fromDbCard(payload.new);
             setCards((prev) => prev.map((c) => (c.id === updatedCard.id ? updatedCard : c)));
+          }
+        });
+
+        // Realtime updates: users
+        userChannel = supabaseService.subscribeToUsers((payload) => {
+          if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+            const updatedUser = fromDbUser(payload.new);
+            setUsers((prev) => {
+              const exists = prev.some((u) => u.id === updatedUser.id);
+              if (exists) return prev.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+              return [updatedUser, ...prev];
+            });
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            setUsers((prev) => prev.filter((u) => u.id !== payload.old.id));
           }
         });
       } catch (err) {
@@ -255,6 +320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       if (cardChannel) supabase.removeChannel(cardChannel);
       if (requestChannel) supabase.removeChannel(requestChannel);
+      if (userChannel) supabase.removeChannel(userChannel);
     };
   }, []);
 
@@ -1261,6 +1327,155 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // 14. User Management Actions
+  const registerUser = async (params: {
+    code: string;
+    name: string;
+    department: string;
+    leaderName: string;
+    telegramId?: string;
+    telegramUsername?: string;
+  }) => {
+    const existing = users.find((u) => u.code.toUpperCase() === params.code.toUpperCase());
+    if (existing && existing.role !== 'pending' && existing.role !== 'rejected') {
+      return { success: false, message: `Mã nhân sự ${params.code} đã tồn tại và đã được kích hoạt trong hệ thống!` };
+    }
+
+    const newUserId = existing ? existing.id : `user-${Date.now()}`;
+    const newUser: UserProfile = {
+      id: newUserId,
+      code: params.code.toUpperCase(),
+      name: params.name,
+      department: params.department,
+      leaderName: params.leaderName,
+      telegramId: params.telegramId || '',
+      telegramUsername: params.telegramUsername || '',
+      role: 'pending',
+      botActive: Boolean(params.telegramId),
+    };
+
+    setUsers((prev) => {
+      const filtered = prev.filter((u) => u.id !== newUserId);
+      return [newUser, ...filtered];
+    });
+    setCurrentUser(newUser);
+
+    // Sync to Supabase
+    await supabaseService.upsertUser(newUser);
+
+    return {
+      success: true,
+      message: 'Hồ sơ đã được gửi thành công! Quản trị viên sẽ phê duyệt và kích hoạt quyền cho bạn.',
+    };
+  };
+
+  const approveUser = (
+    userId: string,
+    options?: { createNewLeaderFromName?: string }
+  ) => {
+    const candidate = users.find((u) => u.id === userId);
+    if (!candidate) {
+      return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
+    }
+
+    let createdLeader: UserProfile | null = null;
+    let targetLeaderId = candidate.leaderId;
+
+    if (options?.createNewLeaderFromName) {
+      const leaderNameTrim = options.createNewLeaderFromName.trim();
+      // Check if leader already exists
+      const foundLeader = users.find(
+        (u) => (u.isLeader || u.role === 'leader') && u.name.trim().toLowerCase() === leaderNameTrim.toLowerCase()
+      );
+
+      if (foundLeader) {
+        targetLeaderId = foundLeader.id;
+      } else {
+        const newLeaderId = `lead-${Date.now()}`;
+        createdLeader = {
+          id: newLeaderId,
+          name: leaderNameTrim,
+          code: `LD-${Math.floor(100 + Math.random() * 899)}`,
+          department: candidate.department,
+          telegramUsername: '',
+          telegramId: '',
+          role: 'leader',
+          isLeader: true,
+          botActive: false,
+        };
+        targetLeaderId = newLeaderId;
+      }
+    }
+
+    const updatedCandidate: UserProfile = {
+      ...candidate,
+      role: 'employee',
+      leaderId: targetLeaderId,
+    };
+
+    setUsers((prev) => {
+      let next = prev.map((u) => (u.id === userId ? updatedCandidate : u));
+      if (createdLeader) {
+        next = [createdLeader, ...next];
+      }
+      return next;
+    });
+
+    if (currentUser.id === userId) {
+      setCurrentUser(updatedCandidate);
+    }
+
+    // Sync to Supabase
+    supabaseService.upsertUser(updatedCandidate).catch(() => {});
+    if (createdLeader) {
+      supabaseService.upsertUser(createdLeader).catch(() => {});
+    }
+
+    return {
+      success: true,
+      message: `Đã phê duyệt và cấp quyền thành công cho nhân sự ${candidate.name}!${
+        createdLeader ? ` Đồng thời đã thêm Leader mới "${createdLeader.name}" vào hệ thống.` : ''
+      }`,
+    };
+  };
+
+  const rejectUser = (userId: string) => {
+    const candidate = users.find((u) => u.id === userId);
+    if (!candidate) {
+      return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
+    }
+
+    const updated: UserProfile = {
+      ...candidate,
+      role: 'rejected',
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    if (currentUser.id === userId) {
+      setCurrentUser(updated);
+    }
+
+    supabaseService.upsertUser(updated).catch(() => {});
+
+    return {
+      success: true,
+      message: `Đã từ chối cấp phép cho nhân sự ${candidate.name}.`,
+    };
+  };
+
+  const resetToNewRegistration = () => {
+    const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
+    setCurrentUser({
+      id: `new-user-${Date.now()}`,
+      name: tg?.first_name ? `${tg.first_name} ${tg.last_name || ''}`.trim() : '',
+      code: '',
+      department: '',
+      telegramUsername: tg?.username ? `@${tg.username}` : '',
+      telegramId: tg?.id ? String(tg.id) : '',
+      role: 'pending',
+    });
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1301,6 +1516,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resetAllData,
         reloadAdminMockData,
         runScenario,
+        registerUser,
+        approveUser,
+        rejectUser,
+        resetToNewRegistration,
       }}
     >
       {children}

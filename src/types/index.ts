@@ -1,4 +1,4 @@
-export type UserRole = 'employee' | 'leader' | 'admin' | 'hr' | 'admin_hr';
+export type UserRole = 'employee' | 'leader' | 'admin' | 'hr' | 'admin_hr' | 'pending' | 'rejected';
 
 export interface UserProfile {
   id: string;
@@ -10,7 +10,9 @@ export interface UserProfile {
   role: UserRole;
   isLeader?: boolean;
   leaderId?: string; // ID of the direct leader
+  leaderName?: string; // Tên leader khi người dùng tự đăng ký
   botActive?: boolean; // Whether the user's Telegram bot is activated
+  registeredAt?: string;
 }
 
 export type CardStatus = 'available' | 'reserved' | 'in_use' | 'damaged' | 'lost';

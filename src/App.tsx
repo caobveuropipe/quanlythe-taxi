@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { PreviewToolbar } from './components/PreviewToolbar';
 import { TelegramHeader } from './components/TelegramHeader';
 import { EmployeeRegisterView } from './components/employee/EmployeeRegisterView';
 import { EmployeeRequestsView } from './components/employee/EmployeeRequestsView';
@@ -10,6 +9,8 @@ import { AdminInventoryView } from './components/admin/AdminInventoryView';
 import { AdminReportsView } from './components/admin/AdminReportsView';
 import { AdminSettingsView } from './components/admin/AdminSettingsView';
 import { AdminWebPortalStandbyView } from './components/admin/AdminWebPortalStandbyView';
+import { UserOnboardingView } from './components/auth/UserOnboardingView';
+import { AdminUserApprovalModal } from './components/admin/AdminUserApprovalModal';
 import {
   FilePlus,
   ListFilter,
@@ -19,10 +20,11 @@ import {
   Settings,
   Globe,
   Bell,
+  UserCheck,
 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { currentUser, config, requests, activeViewMode } = useApp();
+  const { currentUser, users, config, requests, activeViewMode } = useApp();
 
   // Initialize Telegram WebApp SDK if opened in real Telegram client
   useEffect(() => {
@@ -40,6 +42,7 @@ const MainAppContent: React.FC = () => {
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<string>('register');
   const [subView, setSubView] = useState<'settings' | 'web_portal' | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
@@ -49,6 +52,11 @@ const MainAppContent: React.FC = () => {
   const isLeader =
     (currentUser.role === 'leader' || currentUser.isLeader) &&
     config.requireLeaderApproval;
+
+  const isPendingOrRejected =
+    currentUser.role === 'pending' || currentUser.role === 'rejected';
+
+  const pendingUsersCount = users.filter((u) => u.role === 'pending').length;
 
   // Counts for badges
   const pendingLeaderCount = requests.filter(
@@ -66,9 +74,6 @@ const MainAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      {/* Top Test / Preview Toolbar */}
-      <PreviewToolbar />
-
       {/* Main Viewport Container */}
       <main className="flex-1 flex justify-center items-start p-0 sm:py-6 sm:px-4">
         <div
@@ -82,10 +87,22 @@ const MainAppContent: React.FC = () => {
           <TelegramHeader
             onOpenSettings={() => setSubView('settings')}
             onOpenWebPortal={() => setSubView('web_portal')}
+            onOpenUserApprovals={() => setShowApprovalModal(true)}
+            pendingUsersCount={pendingUsersCount}
           />
 
-          {/* Subview (Settings or Standby Web Portal) */}
-          {subView === 'settings' ? (
+          {/* Admin User Approval Modal */}
+          <AdminUserApprovalModal
+            isOpen={showApprovalModal}
+            onClose={() => setShowApprovalModal(false)}
+          />
+
+          {/* If current user is pending registration or rejected: ONLY show Onboarding view */}
+          {isPendingOrRejected ? (
+            <div className="flex-1 overflow-y-auto pb-10">
+              <UserOnboardingView />
+            </div>
+          ) : subView === 'settings' ? (
             <div className="flex-1 overflow-y-auto pb-16">
               <div className="p-3 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -150,7 +167,7 @@ const MainAppContent: React.FC = () => {
           )}
 
           {/* Bottom Fixed Navigation Bar */}
-          {!subView && (
+          {!subView && !isPendingOrRejected && (
             <nav className="sticky bottom-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 transition-colors">
               {/* Employee Bottom Bar (RULE: Only 2 main tabs: "Đăng ký" and "Yêu cầu của tôi") */}
               {!isAdminOrHR && !isLeader && (

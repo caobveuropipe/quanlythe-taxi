@@ -1,5 +1,32 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
-import { TaxiCard, TaxiRequest } from '../types';
+import { TaxiCard, TaxiRequest, UserProfile } from '../types';
+
+// Convert DB snake_case row to TypeScript camelCase UserProfile
+export const fromDbUser = (row: any): UserProfile => ({
+  id: row.id,
+  name: row.name,
+  code: row.code,
+  department: row.department,
+  telegramUsername: row.telegram_username || '',
+  telegramId: String(row.telegram_id || ''),
+  role: row.role || 'employee',
+  isLeader: Boolean(row.is_leader),
+  leaderId: row.leader_id || undefined,
+  botActive: Boolean(row.telegram_id),
+});
+
+// Convert TypeScript camelCase UserProfile to DB snake_case row
+export const toDbUser = (user: UserProfile) => ({
+  id: user.id,
+  name: user.name,
+  code: user.code,
+  department: user.department,
+  telegram_username: user.telegramUsername || null,
+  telegram_id: user.telegramId || null,
+  role: user.role,
+  is_leader: Boolean(user.isLeader),
+  leader_id: user.leaderId || null,
+});
 
 // Convert DB snake_case row to TypeScript camelCase TaxiCard
 export const fromDbCard = (row: any): TaxiCard => ({
@@ -208,6 +235,43 @@ export const supabaseService = {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'taxi_cards' },
+        (payload) => onUpdate(payload)
+      )
+      .subscribe();
+  },
+
+  // Fetch all users
+  async getUsers(): Promise<UserProfile[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error || !data) return null;
+      return data.map(fromDbUser);
+    } catch {
+      return null;
+    }
+  },
+
+  // Upsert user
+  async upsertUser(user: UserProfile) {
+    try {
+      const row = toDbUser(user);
+      const { error } = await supabase.from('users').upsert(row);
+      if (error) console.warn('Supabase upsertUser error:', error);
+    } catch (e) {
+      console.warn('Supabase upsertUser error:', e);
+    }
+  },
+
+  // Realtime subscription for users
+  subscribeToUsers(onUpdate: (payload: any) => void) {
+    return supabase
+      .channel('public:users')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
         (payload) => onUpdate(payload)
       )
       .subscribe();
