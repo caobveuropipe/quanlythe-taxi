@@ -89,7 +89,13 @@ export const AdminInventoryView: React.FC = () => {
   };
 
   const filteredCards = cards.filter((c) => {
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false;
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'damaged') {
+        if (c.status !== 'damaged' && c.status !== 'lost') return false;
+      } else if (c.status !== filterStatus) {
+        return false;
+      }
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const normQ = removeVietnameseTones(searchQuery.trim());
@@ -185,35 +191,66 @@ export const AdminInventoryView: React.FC = () => {
         </div>
       </div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-4 gap-2 text-center text-xs">
-        <div className="p-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
-          <div className="text-[10px] text-emerald-800 dark:text-emerald-300">Trong kho</div>
-          <div className="font-mono text-base font-bold text-emerald-900 dark:text-emerald-100 tabular-nums">
-            {availableCount}
-          </div>
-        </div>
-
-        <div className="p-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-          <div className="text-[10px] text-blue-800 dark:text-blue-300">Đã giữ</div>
-          <div className="font-mono text-base font-bold text-blue-900 dark:text-blue-100 tabular-nums">
-            {reservedCount}
-          </div>
-        </div>
-
-        <div className="p-2 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
-          <div className="text-[10px] text-purple-800 dark:text-purple-300">Đang dùng</div>
-          <div className="font-mono text-base font-bold text-purple-900 dark:text-purple-100 tabular-nums">
-            {inUseCount}
-          </div>
-        </div>
-
-        <div className="p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-          <div className="text-[10px] text-amber-800 dark:text-amber-300">Hỏng/Khóa</div>
-          <div className="font-mono text-base font-bold text-amber-900 dark:text-amber-100 tabular-nums">
-            {damagedCount}
-          </div>
-        </div>
+      {/* Hàng thống kê kiêm bộ lọc tích hợp 5 trạng thái (Gộp làm 1, bấm trực tiếp để lọc thẻ) */}
+      <div className="grid grid-cols-5 gap-1.5 text-center text-xs">
+        {[
+          {
+            key: 'all',
+            label: 'Tất cả thẻ',
+            count: cards.length,
+            activeColor: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-slate-100 ring-2 ring-slate-400 dark:ring-slate-300',
+            defaultColor: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-800 hover:border-slate-400',
+          },
+          {
+            key: 'available',
+            label: 'Trong kho',
+            count: availableCount,
+            activeColor: 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400',
+            defaultColor: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800 hover:border-emerald-400',
+          },
+          {
+            key: 'reserved',
+            label: 'Đã giữ',
+            count: reservedCount,
+            activeColor: 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400',
+            defaultColor: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/20 dark:text-blue-300 dark:border-blue-800 hover:border-emerald-400',
+          },
+          {
+            key: 'in_use',
+            label: 'Đang dùng',
+            count: inUseCount,
+            activeColor: 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-400',
+            defaultColor: 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/20 dark:text-purple-300 dark:border-purple-800 hover:border-purple-400',
+          },
+          {
+            key: 'damaged',
+            label: 'Hỏng/Khóa',
+            count: damagedCount,
+            activeColor: 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-400',
+            defaultColor: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-800 hover:border-amber-400',
+          },
+        ].map((item) => {
+          const isSelected = filterStatus === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setFilterStatus(item.key)}
+              className={`p-1.5 sm:p-2 border rounded transition-all cursor-pointer flex flex-col items-center justify-center select-none ${
+                isSelected
+                  ? `${item.activeColor} font-bold shadow-xs`
+                  : `${item.defaultColor}`
+              }`}
+            >
+              <div className={`text-[10px] leading-tight truncate w-full ${isSelected ? 'opacity-90' : 'opacity-80'}`}>
+                {item.label}
+              </div>
+              <div className="font-mono text-sm sm:text-base font-bold tabular-nums mt-0.5">
+                {item.count}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search Bar for Cards */}
@@ -236,29 +273,6 @@ export const AdminInventoryView: React.FC = () => {
             <X className="w-3.5 h-3.5" />
           </button>
         )}
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 text-xs overflow-x-auto pb-1 no-scrollbar">
-        {[
-          { key: 'all', label: 'Tất cả thẻ' },
-          { key: 'available', label: 'Trong kho' },
-          { key: 'in_use', label: 'Đang dùng' },
-          { key: 'reserved', label: 'Đã giữ' },
-          { key: 'damaged', label: 'Hỏng/Khóa' },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setFilterStatus(tab.key)}
-            className={`px-2.5 py-1 font-medium transition-colors border ${
-              filterStatus === tab.key
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-blue-600 dark:border-blue-600'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-400'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
       </div>
 
       {/* Cards List */}
