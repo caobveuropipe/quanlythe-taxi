@@ -1,0 +1,6 @@
+{
+  "name": "TaxiCard - Quản lý thẻ taxi nội bộ",
+  "description": "Telegram Mini App quản lý thẻ taxi nội bộ theo vai trò Nhân sự, Leader, Admin và HR, kèm cổng chờ Web Admin.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

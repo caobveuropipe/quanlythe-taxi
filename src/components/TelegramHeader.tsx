@@ -1,0 +1,136 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { UserProfileModal } from './UserProfileModal';
+import { X, MoreVertical, User, Settings, Globe, Shield, MessageSquare } from 'lucide-react';
+
+interface TelegramHeaderProps {
+  onOpenSettings?: () => void;
+  onOpenWebPortal?: () => void;
+  onOpenBotSample?: () => void;
+}
+
+export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
+  onOpenSettings,
+  onOpenWebPortal,
+  onOpenBotSample,
+}) => {
+  const { currentUser, config } = useApp();
+  const [showProfile, setShowProfile] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+
+  const isAdminOrHR = currentUser.role === 'admin' || currentUser.role === 'admin_hr' || currentUser.role === 'hr';
+  const isLeader = currentUser.role === 'leader' || currentUser.isLeader;
+
+  return (
+    <>
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3.5 py-2.5 flex items-center justify-between transition-colors">
+        {/* Left: Close icon & App Identity */}
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              // Simulated Telegram back/close
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            title="Đóng Mini App"
+            className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="leading-tight">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">
+                TaxiCard
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                · Nội bộ
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
+              <span>{currentUser.name}</span>
+              <span>•</span>
+              <span className="font-mono">{currentUser.code}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Small profile icon and 3-dots menu */}
+        <div className="flex items-center gap-1 relative">
+          {/* Profile Icon button */}
+          <button
+            onClick={() => setShowProfile(true)}
+            title="Xem hồ sơ nhân sự"
+            className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors border border-slate-200 dark:border-slate-700"
+          >
+            <User className="w-4 h-4" />
+          </button>
+
+          {/* 3-dots Menu for secondary options */}
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            title="Tùy chọn khác"
+            className="w-8 h-8 flex items-center justify-center text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1 text-xs z-50 animate-in fade-in zoom-in-95">
+              {isAdminOrHR && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onOpenSettings?.();
+                    }}
+                    className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Thiết lập hệ thống</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onOpenWebPortal?.();
+                    }}
+                    className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Cổng chờ Web Admin</span>
+                  </button>
+                </>
+              )}
+
+              {isLeader && onOpenBotSample && (
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onOpenBotSample();
+                  }}
+                  className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Mẫu tin Telegram Bot</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowProfile(true);
+                }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+              >
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                <span>Xem hồ sơ liên kết</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* User profile modal */}
+      <UserProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
+    </>
+  );
+};
