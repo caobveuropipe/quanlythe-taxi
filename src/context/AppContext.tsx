@@ -1403,6 +1403,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase
     await supabaseService.upsertUser(newUser);
 
+    // Notify Super Admin on Telegram with inline approval buttons
+    const adminId = '5139629652';
+    const botToken = '8690278410:AAHt4QIoK7WlXRfXsPo1b6J-5IYHXD0L2uY';
+    try {
+      fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: adminId,
+          text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt nhanh ngay tại đây hoặc mở Mini App:</i>`,
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ Duyệt cấp phép', callback_data: `approve_user_${newUserId}` },
+                { text: '❌ Từ chối', callback_data: `reject_user_${newUserId}` },
+              ],
+              [
+                { text: '🔍 Mở Mini App để xem', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+              ],
+            ],
+          },
+        }),
+      }).catch(() => {});
+    } catch {}
+
     return {
       success: true,
       message: 'Hồ sơ đã được gửi thành công! Quản trị viên sẽ phê duyệt và kích hoạt quyền cho bạn.',
@@ -1469,6 +1495,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     supabaseService.upsertUser(updatedCandidate).catch(() => {});
     if (createdLeader) {
       supabaseService.upsertUser(createdLeader).catch(() => {});
+    }
+
+    // Notify approved employee on Telegram
+    if (candidate.telegramId) {
+      try {
+        fetch(`https://api.telegram.org/bot8690278410:AAHt4QIoK7WlXRfXsPo1b6J-5IYHXD0L2uY/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: candidate.telegramId,
+            text: `🎉 <b>Chúc mừng bạn ${candidate.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> thành công.\nBây giờ bạn đã có thể tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🚖 Mở TaxiCard Mini App', web_app: { url: 'https://quanly-thetaxi.vercel.app' } }],
+              ],
+            },
+          }),
+        }).catch(() => {});
+      } catch {}
     }
 
     return {
