@@ -1345,7 +1345,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
-        `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
+        `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`
       );
 
       // Thông báo cho nhân viên biết đã được duyệt cấp thẻ
@@ -1379,7 +1379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
-        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</font>`
+        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`
       );
 
       // Thông báo cho nhân viên biết đơn đã duyệt và đang chờ thẻ
@@ -1459,7 +1459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     syncEditTelegramMessages(
       `msg_track_req_${requestId}`,
-      `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Leader phụ trách: <b>${resolvedLeaderName || 'Leader'}</b>\n• Người chuyển: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#f59e0b">Chờ Leader phê duyệt</font>`
+      `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Leader phụ trách: <b>${resolvedLeaderName || 'Leader'}</b>\n• Người chuyển: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ Leader phê duyệt</b>`
     );
 
     // Gửi thông báo trực tiếp cho Leader qua Telegram kèm nút Duyệt / Từ chối
@@ -2287,7 +2287,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
     syncEditTelegramMessages(
       `msg_track_user_${userId}`,
-      `✅ <b>ĐÃ ĐƯỢC PHÊ DUYỆT BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Bộ phận: <b>${candidate.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
+      `✅ <b>ĐÃ ĐƯỢC PHÊ DUYỆT BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Bộ phận: <b>${candidate.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Đã cấp quyền hệ thống</b>`
     );
 
     // Notify approved employee on Telegram
@@ -2335,7 +2335,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
     syncEditTelegramMessages(
       `msg_track_user_${userId}`,
-      `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Người xử lý: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`
+      `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Người xử lý: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Từ chối cấp quyền</b>`
     );
 
     if (currentUser.id === userId) {

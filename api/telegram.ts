@@ -256,7 +256,7 @@ export default async function handler(req: any, res: any) {
           await answerCallbackQuery(cb.id, `✅ Đã phê duyệt ${targetUser.name} với vai trò ${roleLabel}!`);
 
           // Sửa trực tiếp toàn bộ tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (Không sinh thêm tin nhắn thừa)
-          const approvedMsgText = `✅ <b>ĐÃ ĐƯỢC DUYỆT BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`;
+          const approvedMsgText = `✅ <b>ĐÃ ĐƯỢC DUYỆT BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Đã cấp quyền hệ thống</b>`;
 
           await editAllTrackedMessages(
             `msg_track_user_${userId}`,
@@ -305,7 +305,7 @@ export default async function handler(req: any, res: any) {
           await answerCallbackQuery(cb.id, `❌ Đã từ chối nhân sự ${targetUser.name}!`);
 
           // Sửa trực tiếp toàn bộ tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
-          const rejectedMsgText = `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`;
+          const rejectedMsgText = `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <b>Từ chối cấp quyền</b>`;
 
           await editAllTrackedMessages(
             `msg_track_user_${userId}`,
@@ -384,7 +384,7 @@ export default async function handler(req: any, res: any) {
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
+            `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`
           );
 
           // Thông báo cho nhân viên mượn thẻ nếu có telegram_id
@@ -419,7 +419,7 @@ export default async function handler(req: any, res: any) {
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</font>`
+            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`
           );
 
           // Thông báo cho nhân viên
@@ -473,7 +473,7 @@ export default async function handler(req: any, res: any) {
           `msg_track_req_${reqId}`,
           cb.message?.chat?.id,
           cb.message?.message_id,
-          `❌ <b>ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp thẻ</font>`
+          `❌ <b>ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <b>Từ chối cấp thẻ</b>`
         );
 
         // Thông báo cho nhân viên
@@ -541,7 +541,7 @@ export default async function handler(req: any, res: any) {
           `msg_track_req_${reqId}`,
           cb.message?.chat?.id,
           cb.message?.message_id,
-          `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Leader phụ trách: <b>${leaderName || 'Leader'}</b>\n• Người chuyển: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ Leader phê duyệt</font>`
+          `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Leader phụ trách: <b>${leaderName || 'Leader'}</b>\n• Người chuyển: <b>${approverName}</b>\n• Trạng thái: <b>Chờ Leader phê duyệt</b>`
         );
 
         // Gửi thông báo đến Leader kèm nút Duyệt / Từ chối
@@ -630,7 +630,7 @@ export default async function handler(req: any, res: any) {
           await editMessageText(
             cb.message.chat.id,
             cb.message.message_id,
-            `✅ <b>BẠN ĐÃ ĐỒNG Ý YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã chuyển sang Admin để thẩm định cấp thẻ</font>`,
+            `✅ <b>BẠN ĐÃ ĐỒNG Ý YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Đã chuyển sang Admin để thẩm định cấp thẻ</b>`,
             { inline_keyboard: [] }
           );
         }
@@ -746,7 +746,7 @@ export default async function handler(req: any, res: any) {
           await editMessageText(
             cb.message.chat.id,
             cb.message.message_id,
-            `❌ <b>BẠN ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người từ chối: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Đã từ chối</font>`,
+            `❌ <b>BẠN ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người từ chối: <b>${approverName}</b>\n• Trạng thái: <b>Đã từ chối</b>`,
             { inline_keyboard: [] }
           );
         }
