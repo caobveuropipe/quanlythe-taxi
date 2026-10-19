@@ -412,6 +412,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Helper: Gửi tin nhắn Telegram thông báo tiến độ đơn cho nhân viên
+  const notifyEmployeeOrderProgress = async (
+    employeeId: string,
+    text: string,
+    replyMarkup?: any
+  ) => {
+    try {
+      const emp = users.find((u) => u.id === employeeId);
+      let tgId = emp?.telegramId;
+      if (!tgId) {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('telegram_id')
+          .eq('id', employeeId)
+          .maybeSingle();
+        tgId = dbUser?.telegram_id;
+      }
+      if (tgId) {
+        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: tgId,
+            text,
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+          }),
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('notifyEmployeeOrderProgress error:', e);
+    }
+  };
+
   // Helper: Find department leader
   const getLeaderForUser = (user: UserProfile) => {
     const mapping = leaderMappings.find((m) => m.department === user.department);
@@ -540,6 +575,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Telegram notify order error:', err);
     }
+
+    // Thông báo trực tiếp cho nhân viên vừa tạo đơn biết đơn đã được gửi thành công
+    notifyEmployeeOrderProgress(
+      currentUser.id,
+      `📨 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC GỬI!</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n• Thời gian đi: <b>${formatVietnameseDateTime(estimatedStartTime || new Date().toISOString())}</b>\n• Trạng thái: <b>Chờ Admin thẩm định & cấp thẻ</b>\n\n👇 Hệ thống sẽ tự động cập nhật tiến trình phê duyệt tới bạn qua tin nhắn Telegram này!`
+    );
 
     return {
       success: true,
@@ -709,6 +750,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
+    if (assignedReq) {
+      const waitlistTarget = assignedReq as TaxiRequest;
+      notifyEmployeeOrderProgress(
+        waitlistTarget.employeeId,
+        `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Thẻ đã gán: <b>${cardCode}</b> (vừa hoàn trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý trước giờ đi nhé!`
+      );
+    }
+
     return assignedReq;
   };
 
@@ -765,6 +814,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    // 1. Thông báo cho nhân viên biết Leader đã đồng ý và đơn đang chuyển Admin cấp thẻ
+    notifyEmployeeOrderProgress(
+      target.employeeId,
+      `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người duyệt: Leader <b>${currentUser.name}</b>\n• Ý kiến: <i>${comment?.trim() || 'Đồng ý chuyến đi'}</i>\n• Trạng thái: <b>Đã chuyển sang Admin để thẩm định cấp thẻ</b>\n\n👉 Ban Quản trị/Admin đang chuẩn bị xuất thẻ cho chuyến đi của bạn!`
+    );
+
+    // 2. Báo cho tất cả Admin/HR biết Leader đã duyệt, Admin có thể duyệt cấp thẻ ngay
+    (async () => {
+      try {
+        const { data: adminList } = await supabase
+          .from('users')
+          .select('telegram_id')
+          .in('role', ['admin_hr', 'admin'])
+          .not('telegram_id', 'is', null);
+
+        const allAdminIds = new Set(['5139629652', ...(adminList || []).map((a) => String(a.telegram_id))]);
+        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+        const adminTrackedMsgs: Array<{ chatId: string | number; messageId: number }> = [];
+
+        for (const aId of Array.from(allAdminIds)) {
+          if (aId && aId.trim()) {
+            const sent = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: aId,
+                text: `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN TAXI!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Nhân sự: <b>${target.employeeName}</b> (<code>${target.employeeCode}</code>)\n• Leader: <b>${currentUser.name}</b> đã phê duyệt.\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ ngay bên dưới:</i>`,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${requestId}` },
+                      { text: '❌ Từ chối', callback_data: `reject_req_${requestId}` },
+                    ],
+                    [
+                      { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                    ],
+                  ],
+                },
+              }),
+            }).then((r) => r.json()).catch(() => null);
+
+            if (sent?.ok && sent?.result?.message_id) {
+              adminTrackedMsgs.push({ chatId: aId, messageId: sent.result.message_id });
+            }
+          }
+        }
+
+        if (adminTrackedMsgs.length > 0) {
+          await supabase.from('users').upsert({
+            id: `msg_track_req_${requestId}`,
+            name: 'Tracker',
+            code: 'MSG_META',
+            department: 'system',
+            role: 'system',
+            telegram_username: JSON.stringify(adminTrackedMsgs),
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('Error notifying admins after leader approve:', e);
+      }
+    })();
+
     return { success: true, message: 'Đã duyệt yêu cầu. Hồ sơ được chuyển tới Admin duyệt cuối.' };
   };
 
@@ -793,6 +905,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'rejected_leader',
         };
       })
+    );
+
+    // Thông báo cho nhân viên biết đơn bị Leader từ chối
+    notifyEmployeeOrderProgress(
+      target.employeeId,
+      `❌ <b>YÊU CẦU MƯỢN THẺ BỊ LEADER TỪ CHỐI</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người từ chối: Leader <b>${currentUser.name}</b>\n• Lý do: <i>${reason.trim()}</i>\n\n👉 Vui lòng liên hệ Leader nếu bạn có thắc mắc.`
     );
 
     return { success: true, message: 'Đã từ chối yêu cầu và lưu lý do gửi nhân sự.' };
@@ -946,6 +1064,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
       );
 
+      // Thông báo cho nhân viên biết đã được duyệt cấp thẻ
+      notifyEmployeeOrderProgress(
+        target.employeeId,
+        `🎉 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT CẤP THẺ!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến gặp Admin tại quầy Hành chính để nhận thẻ trước giờ khởi hành!`
+      );
+
       return {
         success: true,
         message: `Admin đã duyệt! Đã giữ thẻ dự kiến ${availableCard.code} cho yêu cầu này.`,
@@ -971,6 +1095,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
         `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</font>`
+      );
+
+      // Thông báo cho nhân viên biết đơn đã duyệt và đang chờ thẻ
+      notifyEmployeeOrderProgress(
+        target.employeeId,
+        `⏳ <b>YÊU CẦU ĐÃ ĐƯỢC DUYỆT (ĐANG CHỜ THẺ TRỐNG)</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người duyệt: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Hàng chờ cấp bù thẻ</b>\n\nDo kho thẻ hiện đang bận, đơn của bạn được xếp vào danh sách ưu tiên. Hệ thống sẽ tự động gán thẻ và gửi thông báo cho bạn ngay khi có thẻ hoàn trả về quầy!`
       );
 
       return {
@@ -1006,6 +1136,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `msg_track_req_${requestId}`,
       `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target?.employeeName || ''}</b>\n• Người từ chối: <b>${currentUser.name} (qua Mini App)</b>\n• Lý do: <i>${reason.trim()}</i>`
     );
+
+    if (target) {
+      notifyEmployeeOrderProgress(
+        target.employeeId,
+        `❌ <b>YÊU CẦU MƯỢN THẺ BỊ ADMIN TỪ CHỐI</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người từ chối: Admin <b>${currentUser.name}</b>\n• Lý do: <i>${reason.trim()}</i>`
+      );
+    }
 
     return { success: true, message: 'Đã từ chối yêu cầu.' };
   };
@@ -1071,6 +1208,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).catch((err) => console.warn('Error sending Telegram to leader:', err));
     }
 
+    // Thông báo cho nhân viên biết đơn đã được chuyển tới Leader
+    notifyEmployeeOrderProgress(
+      target.employeeId,
+      `📋 <b>TIẾN ĐỘ ĐƠN TAXI [${target.id}]</b>\n\n• Trạng thái: <b>Chờ Leader duyệt</b>\n• Admin <b>${currentUser.name}</b> đã chuyển đơn của bạn tới Leader <b>${resolvedLeaderName || 'phụ trách'}</b> để xác nhận chuyến đi.\n\n👉 Bạn có thể nhắc Leader kiểm tra Telegram hoặc Mini App để đơn được duyệt nhanh hơn!`
+    );
+
     return {
       success: true,
       message: `Đã gửi yêu cầu phê duyệt tới Leader ${resolvedLeaderName || 'bộ phận'} qua Telegram!`,
@@ -1112,6 +1255,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'pending_handover',
         };
       })
+    );
+
+    // Thông báo cho nhân viên biết đã được cấp thẻ từ hàng chờ
+    notifyEmployeeOrderProgress(
+      targetReq.employeeId,
+      `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ được cấp: <b>${cardCode}</b>\n• Người cấp: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ nhé!`
     );
 
     return {
@@ -1172,6 +1321,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'holding_card',
         };
       })
+    );
+
+    // Thông báo cho nhân viên biết đã nhận thẻ thành công
+    notifyEmployeeOrderProgress(
+      targetReq.employeeId,
+      `🔑 <b>BẠN ĐÃ NHẬN THẺ TAXI THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ đang giữ: <b>${actualCardCode}</b>\n• Người bàn giao: <b>${operatorName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>\n\n👉 Chúc bạn có chuyến đi thuận lợi! Bạn nhớ giữ hóa đơn/cuống vé và hoàn trả thẻ cho Admin sau khi về nhé.`
     );
 
     return {
@@ -1366,6 +1521,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           },
         };
       })
+    );
+
+    // Thông báo cho nhân viên biết chuyến đi đã hoàn tất và đã thu hồi thẻ
+    const costDisplay = isMissing ? 'Đang chờ đối soát' : `${Number(cost).toLocaleString('vi-VN')} VNĐ`;
+    notifyEmployeeOrderProgress(
+      targetReq.employeeId,
+      `🏁 <b>HOÀN TẤT CHUYẾN ĐI & TRẢ THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${params.requestId}</code>\n• Thẻ đã trả: <b>${cardCode}</b>\n• Tình trạng thẻ: <b>${params.cardCondition === 'good' ? 'Tốt / Bình thường' : params.cardCondition}</b>\n• Chi phí ghi nhận: <b>${costDisplay}</b>\n• Trạng thái: <b>Đã hoàn thành chuyến đi</b>\n\nCảm ơn bạn đã sử dụng và bảo quản thẻ đúng quy định!`
     );
 
     if (isMissing) {

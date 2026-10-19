@@ -565,6 +565,20 @@ export default async function handler(req: any, res: any) {
             `⚠️ <i>Lưu ý: Leader <b>${leaderName || 'của nhân sự này'}</b> chưa có Telegram ID trong hệ thống. Vui lòng nhắc Leader mở Bot hoặc duyệt trên Mini App.</i>`
           ).catch(() => {});
         }
+
+        // Thông báo cho nhân viên biết đơn đã được chuyển sang Leader
+        const { data: empUserForward } = await supabase
+          .from('users')
+          .select('telegram_id')
+          .eq('id', targetReq.employee_id)
+          .maybeSingle();
+
+        if (empUserForward?.telegram_id) {
+          await sendTelegramMessage(
+            empUserForward.telegram_id,
+            `📋 <b>TIẾN ĐỘ ĐƠN TAXI [${reqId}]</b>\n\n• Trạng thái: <b>Chờ Leader duyệt</b>\n• Admin <b>${approverName}</b> đã chuyển đơn của bạn tới Leader <b>${leaderName || 'phụ trách'}</b> để xác nhận chuyến đi.\n\n👉 Bạn có thể nhắc Leader kiểm tra Telegram hoặc Mini App để đơn được duyệt nhanh hơn!`
+          ).catch(() => {});
+        }
       } else if (data.startsWith('leader_approve_')) {
         const reqId = data.replace('leader_approve_', '');
         const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
@@ -616,6 +630,20 @@ export default async function handler(req: any, res: any) {
             `✅ <b>BẠN ĐÃ ĐỒNG Ý YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã chuyển sang Admin để thẩm định cấp thẻ</font>`,
             { inline_keyboard: [] }
           );
+        }
+
+        // Thông báo cho nhân viên biết Leader đã đồng ý và đơn chuyển sang Admin cấp thẻ
+        const { data: empUserApproved } = await supabase
+          .from('users')
+          .select('telegram_id')
+          .eq('id', targetReq.employee_id)
+          .maybeSingle();
+
+        if (empUserApproved?.telegram_id) {
+          await sendTelegramMessage(
+            empUserApproved.telegram_id,
+            `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người duyệt: Leader <b>${approverName}</b>\n• Trạng thái: <b>Đã chuyển sang Admin để thẩm định cấp thẻ</b>\n\n👉 Ban Quản trị/Admin đang chuẩn bị cấp thẻ cho chuyến đi của bạn!`
+          ).catch(() => {});
         }
 
         // Báo cho tất cả Admin/HR biết Leader đã duyệt, Admin có thể cấp thẻ ngay
