@@ -364,17 +364,17 @@ export const AdminReportsView: React.FC = () => {
                           </div>
                           {trip.hrOverBudgetDecision === 'accepted' && (
                             <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300">
-                              HR đã Accept: "{trip.hrDecisionReason}"
+                              Admin đã duyệt: "{trip.hrDecisionReason}"
                             </span>
                           )}
                           {trip.hrOverBudgetDecision === 'rejected' && (
                             <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-300">
-                              HR đã Reject: "{trip.hrDecisionReason}"
+                              Admin đã từ chối: "{trip.hrDecisionReason}"
                             </span>
                           )}
                           {trip.hrOverBudgetDecision === 'pending' && (
                             <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-300">
-                              Chờ HR thẩm định
+                              Vượt mức chờ Admin duyệt
                             </span>
                           )}
                         </div>

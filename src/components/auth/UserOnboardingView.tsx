@@ -211,7 +211,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
             Yêu cầu chưa được phê duyệt
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-            Hồ sơ nhân sự của bạn chưa được Quản trị viên duyệt cấp quyền. Vui lòng liên hệ Admin/HR hoặc điều chỉnh lại thông tin chính xác.
+            Hồ sơ nhân sự của bạn chưa được Quản trị viên duyệt cấp quyền. Vui lòng liên hệ Admin hoặc điều chỉnh lại thông tin chính xác.
           </p>
         </div>
 

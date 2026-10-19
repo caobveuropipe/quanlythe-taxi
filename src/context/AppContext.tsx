@@ -1780,7 +1780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isOver) {
       return {
         success: true,
-        message: `Đã lưu bill! Cảnh báo: Chi phí (${cost?.toLocaleString('vi-VN')} đ) vượt mức tối đa (${maxSpend.toLocaleString('vi-VN')} đ). Chờ HR phê duyệt.`,
+        message: `Đã lưu bill! Cảnh báo: Chi phí (${cost?.toLocaleString('vi-VN')} đ) vượt mức tối đa (${maxSpend.toLocaleString('vi-VN')} đ). Chờ Admin phê duyệt.`,
       };
     }
 
@@ -1825,7 +1825,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `HR đã ${decision === 'accepted' ? 'Accept (Duyệt chi)' : 'Từ chối (Reject)'} khoản vượt mức thành công. Số tiền thực tế vẫn được lưu trữ theo quy định.`,
+      message: `Admin đã ${decision === 'accepted' ? 'Duyệt chi (Accept)' : 'Từ chối (Reject)'} khoản vượt mức thành công. Số tiền thực tế vẫn được lưu trữ theo quy định.`,
     };
   };
 
@@ -2153,7 +2153,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabaseService.upsertUser(createdLeader).catch(() => {});
     }
 
-    const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : grantedRole === 'admin' ? 'Quản trị viên (Admin)' : grantedRole === 'admin_hr' ? 'Admin kiêm HR' : grantedRole === 'hr' ? 'HR Vận hành' : 'Nhân sự';
+    const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : (grantedRole === 'admin' || grantedRole === 'admin_hr' || grantedRole === 'hr') ? 'Quản trị viên (Admin)' : 'Nhân sự';
 
     // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
     syncEditTelegramMessages(

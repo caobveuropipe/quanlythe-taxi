@@ -31,12 +31,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
       const roleLabel =
         newRole === 'leader'
           ? 'Leader duyệt đơn'
-          : newRole === 'admin'
-          ? 'Admin'
-          : newRole === 'admin_hr'
-          ? 'Admin kiêm HR'
-          : newRole === 'hr'
-          ? 'HR Vận hành'
+          : newRole === 'admin' || newRole === 'admin_hr' || newRole === 'hr'
+          ? 'Quản trị viên (Admin)'
           : newRole === 'pending'
           ? 'Chờ duyệt'
           : newRole === 'rejected'
@@ -126,7 +122,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
             Mức chi phí tối đa cho mỗi lượt (VNĐ)
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
-            Hóa đơn vượt quá mức này sẽ kích hoạt cảnh báo để HR xem xét Accept hoặc Reject
+            Hóa đơn vượt quá mức này sẽ kích hoạt cảnh báo để Admin xem xét Accept hoặc Reject
           </div>
         </div>
 
@@ -241,15 +237,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
               <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                 <span className="text-[10px] text-slate-400">Vai trò:</span>
                 <select
-                  value={u.role}
+                  value={u.role === 'admin_hr' || u.role === 'hr' ? 'admin' : u.role}
                   onChange={(e) => handleRoleChange(u.id, u.name, e.target.value as UserRole)}
                   className="p-1 px-2 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500"
                 >
                   <option value="employee">Nhân sự (Mượn thẻ)</option>
                   <option value="leader">Leader (Duyệt đơn)</option>
-                  <option value="admin">Admin (Quản trị)</option>
-                  <option value="hr">HR Vận hành</option>
-                  <option value="admin_hr">Admin kiêm HR</option>
+                  <option value="admin">Quản trị viên (Admin)</option>
                   <option value="pending">Chờ duyệt (Pending)</option>
                   <option value="rejected">Chặn / Từ chối</option>
                 </select>

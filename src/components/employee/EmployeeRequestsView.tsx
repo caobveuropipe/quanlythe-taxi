@@ -46,7 +46,7 @@ export const EmployeeRequestsView: React.FC = () => {
       case 'pending_leader':
         return { text: 'Chờ Leader duyệt', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300' };
       case 'pending_admin':
-        return { text: 'Chờ HR cấp thẻ', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300' };
+        return { text: 'Chờ Admin cấp thẻ', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300' };
       case 'waitlist_cards':
         return { text: 'Chờ kho thẻ', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300' };
       case 'pending_handover':
@@ -303,10 +303,10 @@ export const EmployeeRequestsView: React.FC = () => {
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-[11px] space-y-1">
                   <div className="font-semibold flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Đang ở khâu: HR yêu cầu Leader duyệt</span>
+                    <span>Đang ở khâu: Admin yêu cầu Leader duyệt</span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-300">
-                    HR/Admin đã tiếp nhận và chuyển tiếp đơn tới Leader <strong>{selectedRequest.leaderName || 'Trần Thị Bích'}</strong> để xin ý kiến phê duyệt trước khi xuất thẻ.
+                    Admin đã tiếp nhận và chuyển tiếp đơn tới Leader <strong>{selectedRequest.leaderName || 'Trần Thị Bích'}</strong> để xin ý kiến phê duyệt trước khi xuất thẻ.
                   </p>
                 </div>
               )}
@@ -317,14 +317,14 @@ export const EmployeeRequestsView: React.FC = () => {
                     <Clock className="w-3.5 h-3.5 text-blue-600" />
                     <span>
                       {selectedRequest.leaderApprovalStatus === 'approved'
-                        ? 'Leader đã duyệt · Đang chờ HR cấp thẻ'
-                        : 'Đang ở khâu: Chờ HR/Admin tiếp nhận & cấp thẻ'}
+                        ? 'Leader đã duyệt · Đang chờ Admin cấp thẻ'
+                        : 'Đang ở khâu: Chờ Admin tiếp nhận & cấp thẻ'}
                     </span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-300">
                     {selectedRequest.leaderApprovalStatus === 'approved'
-                      ? 'Leader đã phê duyệt đồng ý. Đơn đang ở bàn HR/Admin để phân bổ thẻ vật lý.'
-                      : 'Đơn đã gửi thành công tới bàn HR/Admin. HR/Admin sẽ kiểm tra lịch trình và điều phối thẻ.'}
+                      ? 'Leader đã phê duyệt đồng ý. Đơn đang ở bàn Admin để phân bổ thẻ vật lý.'
+                      : 'Đơn đã gửi thành công tới bàn Admin. Admin sẽ kiểm tra lịch trình và điều phối thẻ.'}
                   </p>
                 </div>
               )}

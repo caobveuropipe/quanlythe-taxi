@@ -189,8 +189,6 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
                         <option value="employee">Nhân sự (Tạo yêu cầu mượn thẻ)</option>
                         <option value="leader">Leader (Duyệt đơn phòng ban)</option>
                         <option value="admin">Admin (Quản trị hệ thống)</option>
-                        <option value="hr">HR Vận hành (Điều phối thẻ)</option>
-                        <option value="admin_hr">Admin kiêm HR</option>
                       </select>
                     </div>
 

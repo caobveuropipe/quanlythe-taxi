@@ -143,12 +143,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   Vai trò (Cố định)
                 </label>
                 <div className="p-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium truncate">
-                  {currentUser.role === 'admin_hr'
-                    ? 'Admin kiêm HR'
+                  {currentUser.role === 'admin' || currentUser.role === 'admin_hr' || currentUser.role === 'hr'
+                    ? 'Admin'
                     : currentUser.role === 'leader'
                     ? 'Leader'
-                    : currentUser.role === 'admin'
-                    ? 'Admin'
                     : currentUser.role === 'pending'
                     ? 'Đang chờ duyệt'
                     : currentUser.role === 'rejected'
@@ -223,9 +221,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                 <div className="font-medium text-slate-800 dark:text-slate-200">
                   {currentUser.role === 'employee' && 'Nhân sự'}
                   {currentUser.role === 'leader' && 'Leader duyệt'}
-                  {currentUser.role === 'admin' && 'Admin'}
-                  {currentUser.role === 'hr' && 'HR Vận hành'}
-                  {currentUser.role === 'admin_hr' && 'Admin kiêm HR'}
+                  {(currentUser.role === 'admin' || currentUser.role === 'admin_hr' || currentUser.role === 'hr') && 'Admin'}
                   {currentUser.role === 'pending' && 'Đang chờ Admin duyệt'}
                   {currentUser.role === 'rejected' && 'Chưa được cấp phép'}
                   {currentUser.role === 'unregistered' && 'Chưa đăng ký'}

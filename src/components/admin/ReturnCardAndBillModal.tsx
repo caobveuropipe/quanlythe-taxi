@@ -348,7 +348,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
                     </div>
                   </div>
                   <div className="text-[11px] text-rose-700 dark:text-rose-300 leading-tight">
-                    * Yêu cầu này sau khi lưu sẽ chuyển sang mục <strong>"Vượt mức chờ HR"</strong> để HR thẩm định <strong>Accept</strong> hoặc <strong>Reject</strong> kèm lý do.
+                    * Yêu cầu này sau khi lưu sẽ chuyển sang mục <strong>"Vượt mức chờ Admin duyệt"</strong> để Admin thẩm định <strong>Accept</strong> hoặc <strong>Reject</strong> kèm lý do.
                   </div>
                 </div>
               ) : costNum > 0 ? (

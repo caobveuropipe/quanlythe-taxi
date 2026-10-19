@@ -46,7 +46,7 @@ export const AdminWebPortalStandbyView: React.FC<AdminWebPortalStandbyViewProps>
         </div>
 
         <p className="text-xs text-blue-100/90 leading-relaxed">
-          Đây là cổng định tuyến chuẩn bị cho phiên bản <strong>Web Admin màn hình lớn</strong>. Ở phiên bản hiện tại, <strong>toàn bộ nghiệp vụ hàng ngày của Admin và HR đều đã được hỗ trợ đầy đủ 100% ngay bên trong Telegram Mini App</strong>, không bị thiếu sót bất kỳ tính năng cốt lõi nào.
+          Đây là cổng định tuyến chuẩn bị cho phiên bản <strong>Web Admin màn hình lớn</strong>. Ở phiên bản hiện tại, <strong>toàn bộ nghiệp vụ hàng ngày của Admin đều đã được hỗ trợ đầy đủ 100% ngay bên trong Telegram Mini App</strong>, không bị thiếu sót bất kỳ tính năng cốt lõi nào.
         </p>
 
         <div className="pt-1 flex items-center gap-2 text-[11px] text-blue-200">
@@ -102,7 +102,7 @@ export const AdminWebPortalStandbyView: React.FC<AdminWebPortalStandbyViewProps>
           <span>Đảm bảo tính kế thừa và đồng bộ:</span>
         </div>
         <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-          Khi webapp quản trị hoàn thành và mở ra, toàn bộ tài khoản nhân sự, phân quyền (Admin, HR, Leader), danh mục mã thẻ taxi và dữ liệu các lượt đi đã ghi nhận trên Mini App này sẽ <strong>dùng chung đồng bộ 100%</strong> mà không phải nhập lại hay chuyển đổi cơ sở dữ liệu.
+          Khi webapp quản trị hoàn thành và mở ra, toàn bộ tài khoản nhân sự, phân quyền (Admin, Leader), danh mục mã thẻ taxi và dữ liệu các lượt đi đã ghi nhận trên Mini App này sẽ <strong>dùng chung đồng bộ 100%</strong> mà không phải nhập lại hay chuyển đổi cơ sở dữ liệu.
         </p>
 
         <button

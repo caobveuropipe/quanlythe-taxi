@@ -55,7 +55,11 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
   // Filtered users list
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      const matchRole = selectedRoleFilter === 'all' || u.role === selectedRoleFilter;
+      const matchRole =
+        selectedRoleFilter === 'all' ||
+        (selectedRoleFilter === 'admin'
+          ? u.role === 'admin' || u.role === 'admin_hr' || u.role === 'hr'
+          : u.role === selectedRoleFilter);
       const term = searchTerm.trim().toLowerCase();
       if (!term) return matchRole;
 
@@ -73,7 +77,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
     return {
       total: users.length,
       leaders: users.filter((u) => u.isLeader || u.role === 'leader').length,
-      admins: users.filter((u) => u.role === 'admin' || u.role === 'admin_hr').length,
+      admins: users.filter((u) => u.role === 'admin' || u.role === 'admin_hr' || u.role === 'hr').length,
       pending: users.filter((u) => u.role === 'pending').length,
     };
   }, [users]);
@@ -170,12 +174,10 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
 
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
-      case 'admin_hr':
-        return { label: 'Admin kiêm HR', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300' };
       case 'admin':
-        return { label: 'Admin', bg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' };
+      case 'admin_hr':
       case 'hr':
-        return { label: 'HR Vận hành', bg: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300' };
+        return { label: 'Admin', bg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' };
       case 'leader':
         return { label: 'Leader duyệt', bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' };
       case 'pending':
@@ -232,7 +234,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
           <div className="font-bold text-amber-800 dark:text-amber-300 text-sm">{stats.leaders}</div>
         </div>
         <div className="p-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded">
-          <div className="text-[10px] text-indigo-700 dark:text-indigo-400">Admin / HR</div>
+          <div className="text-[10px] text-indigo-700 dark:text-indigo-400">Admin</div>
           <div className="font-bold text-indigo-800 dark:text-indigo-300 text-sm">{stats.admins}</div>
         </div>
         <div className="p-2 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800/60 rounded">
@@ -268,7 +270,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
             { id: 'all', label: 'Tất cả' },
             { id: 'employee', label: 'Nhân sự' },
             { id: 'leader', label: 'Leader' },
-            { id: 'admin_hr', label: 'Admin / HR' },
+            { id: 'admin', label: 'Admin' },
             { id: 'pending', label: 'Chờ duyệt' },
             { id: 'rejected', label: 'Bị từ chối' },
           ].map((tab) => {
@@ -471,13 +473,11 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
                   <option value="employee">Nhân sự (Mượn thẻ taxi)</option>
                   <option value="leader">Leader duyệt đơn (Phê duyệt chuyến đi)</option>
                   <option value="admin">Quản trị viên (Admin - Quản lý thẻ)</option>
-                  <option value="hr">HR Vận hành (Điều phối & giao nhận thẻ)</option>
-                  <option value="admin_hr">Admin kiêm HR (Toàn quyền)</option>
                   <option value="pending">Chờ phê duyệt (Pending)</option>
                   <option value="rejected">Bị chặn / Từ chối (Rejected)</option>
                 </select>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  * Leader hoặc Admin kiêm HR có quyền duyệt các chuyến đi của nhân viên cấp dưới.
+                  * Leader hoặc Admin có quyền duyệt các chuyến đi của nhân viên cấp dưới.
                 </p>
               </div>
 

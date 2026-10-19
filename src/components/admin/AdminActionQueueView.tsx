@@ -343,7 +343,7 @@ export const AdminActionQueueView: React.FC = () => {
           <Clock className="w-3 h-3 text-amber-600" />
           <span>Đang ở khâu: Leader <strong>{req.leaderName || 'bộ phận'}</strong> duyệt</span>
         </div>
-        <span className="italic text-amber-600 dark:text-amber-400">HR đã chuyển tiếp</span>
+        <span className="italic text-amber-600 dark:text-amber-400">Admin đã chuyển tiếp</span>
       </div>
     </div>
   );

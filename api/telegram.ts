@@ -138,7 +138,7 @@ export default async function handler(req: any, res: any) {
           .eq('telegram_id', fromIdStr)
           .maybeSingle();
 
-        // TRƯỜNG HỢP 1: Là Super Admin (Van Cao hoặc role admin_hr)
+        // TRƯỜNG HỢP 1: Là Super Admin (Van Cao hoặc role admin)
         if (fromIdStr === SUPER_ADMIN_ID || dbUser?.role === 'admin_hr' || dbUser?.role === 'admin') {
           await sendTelegramMessage(
             chatId,
@@ -646,7 +646,7 @@ export default async function handler(req: any, res: any) {
           ).catch(() => {});
         }
 
-        // Báo cho tất cả Admin/HR biết Leader đã duyệt, Admin có thể cấp thẻ ngay
+        // Báo cho tất cả Admin biết Leader đã duyệt, Admin có thể cấp thẻ ngay
         try {
           const { data: adminList } = await supabase
             .from('users')
