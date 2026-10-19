@@ -457,6 +457,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inline_keyboard: [
         [
           { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${newReqId}` },
+          { text: '⭐ Y/c Leader duyệt', callback_data: `forward_leader_${newReqId}` },
           { text: '❌ Từ chối', callback_data: `reject_req_${newReqId}` },
         ],
         [
@@ -466,7 +467,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     try {
-      // 1. Gửi thông báo có nút duyệt cho tất cả Admin/HR
+      // Gửi thông báo có nút duyệt cho tất cả Admin/HR (Chỉ thông báo cho Leader khi Admin yêu cầu duyệt)
       for (const adminId of Array.from(recipientSet)) {
         if (adminId && adminId.trim()) {
           fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -480,19 +481,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }),
           }).catch((err) => console.warn('Notify admin order error for:', adminId, err));
         }
-      }
-
-      // 2. Nếu Leader quản lý có Telegram và không nằm trong ban Admin, gửi thông báo cập nhật
-      if (resolvedLeaderTelegramId && !recipientSet.has(resolvedLeaderTelegramId)) {
-        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: resolvedLeaderTelegramId,
-            text: `ℹ️ <b>THÀNH VIÊN TRONG BỘ PHẬN TẠO YÊU CẦU MƯỢN THẺ TAXI</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Nhân sự: <b>${currentUser.name}</b> (<code>${currentUser.code}</code>)\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n• Thời gian đi: <b>${timeDisplay}</b>\n\nĐơn đã chuyển đến bộ phận Admin/HR để thẩm định cấp thẻ.`,
-            parse_mode: 'HTML',
-          }),
-        }).catch((err) => console.warn('Notify leader order info error:', err));
       }
     } catch (err) {
       console.warn('Telegram notify order error:', err);
@@ -955,21 +943,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = requests.find((r) => r.id === requestId);
     if (!target) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
+    const directLeader = target.leaderId ? users.find((u) => u.id === target.leaderId) : null;
+    const leaderMapping = leaderMappings.find((m) => m.department === target.department);
+    const resolvedLeaderName = directLeader?.name || target.leaderName || leaderMapping?.leaderName;
+    const resolvedLeaderId = directLeader?.id || target.leaderId || leaderMapping?.leaderId;
+    const resolvedLeaderTelegramId = directLeader?.telegramId || target.leaderTelegramId || leaderMapping?.leaderTelegramId;
+
+    const updatedReq: TaxiRequest = {
+      ...target,
+      leaderApprovalRequired: true,
+      leaderApprovalStatus: 'pending',
+      status: 'pending_leader',
+      leaderId: resolvedLeaderId,
+      leaderName: resolvedLeaderName,
+      leaderTelegramId: resolvedLeaderTelegramId,
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          leaderApprovalRequired: true,
-          leaderApprovalStatus: 'pending',
-          status: 'pending_leader',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq);
+
+    // Gửi thông báo trực tiếp cho Leader qua Telegram kèm nút Duyệt / Từ chối
+    if (resolvedLeaderTelegramId) {
+      const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+      const timeDisplay = formatVietnameseDateTime(target.estimatedStartTime || target.createdAt);
+      const relativeNotice = getRelativeTimeNotice(target.estimatedStartTime || target.createdAt);
+
+      const leaderMsgText = `📋 <b>YÊU CẦU MƯỢN THẺ TAXI CẦN BẠN DUYỆT!</b>\n\nAdmin đã chuyển đơn của thành viên trong bộ phận đến bạn để phê duyệt:\n\n• Mã yêu cầu: <code>${target.id}</code>\n• Nhân sự: <b>${target.employeeName}</b> (Mã: <code>${target.employeeCode}</code>)\n• Bộ phận: <b>${target.department}</b>\n• Thời gian đi: <b>${timeDisplay}</b>${relativeNotice ? ` (<i>${relativeNotice}</i>)` : ''}\n• Mục đích: <b>${target.purpose}</b>\n• Điểm đến: <b>${target.destination}</b>\n${target.clientTag ? `• Thẻ khách/Dự án: <b>${target.clientTag}</b>\n` : ''}\n👇 <i>Leader vui lòng bấm xác nhận bên dưới:</i>`;
+
+      fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: resolvedLeaderTelegramId,
+          text: leaderMsgText,
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ Leader Đồng ý', callback_data: `leader_approve_${target.id}` },
+                { text: '❌ Leader Từ chối', callback_data: `leader_reject_${target.id}` },
+              ],
+              [
+                { text: '📱 Mở Mini App duyệt', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+              ],
+            ],
+          },
+        }),
+      }).catch((err) => console.warn('Error sending Telegram to leader:', err));
+    }
 
     return {
       success: true,
-      message: `Đã gửi yêu cầu phê duyệt tới Leader ${target.leaderName || 'bộ phận'} qua Telegram!`,
+      message: `Đã gửi yêu cầu phê duyệt tới Leader ${resolvedLeaderName || 'bộ phận'} qua Telegram!`,
     };
   };
 
