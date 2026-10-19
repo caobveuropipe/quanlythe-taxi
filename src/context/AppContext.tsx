@@ -10,11 +10,12 @@
  * - Boundary: Mọi thao tác mutate requests/cards/users đều phải đi qua các hàm hành động của Context này.
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   TaxiCard,
   TaxiRequest,
   UserProfile,
+  UserRole,
   DepartmentLeaderMapping,
   AppConfig,
   CardCondition,
@@ -29,6 +30,7 @@ import {
 import { supabaseService, fromDbRequest, fromDbCard, fromDbUser } from '../services/supabaseService';
 import { supabase } from '../lib/supabaseClient';
 import { formatVietnameseDateTime, getRelativeTimeNotice } from '../utils/dateUtils';
+import { InAppToastMessage } from '../components/common/InAppNotificationToast';
 
 interface AppContextType {
   currentUser: UserProfile;
@@ -47,6 +49,11 @@ interface AppContextType {
   isDarkMode: boolean;
   toggleDarkMode: () => void;
   supabaseStatus: 'connecting' | 'connected' | 'offline';
+
+  // Realtime In-App Notifications
+  toasts: InAppToastMessage[];
+  dismissToast: (id: string) => void;
+  triggerInAppToast: (toast: Omit<InAppToastMessage, 'id' | 'timestamp'>) => void;
 
   // Business Actions
   createRequest: (purpose: string, destination: string, clientTag?: string, estimatedStartTime?: string) => { success: boolean; message: string; requestId?: string };
@@ -165,6 +172,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   });
 
+  const [toasts, setToasts] = useState<InAppToastMessage[]>([]);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const triggerInAppToast = useCallback((toast: Omit<InAppToastMessage, 'id' | 'timestamp'>) => {
+    const newToast: InAppToastMessage = {
+      ...toast,
+      id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: Date.now(),
+    };
+    setToasts((prev) => [newToast, ...prev].slice(0, 4));
+  }, []);
+
+  const requestsRef = useRef<TaxiRequest[]>(requests);
+  const usersRef = useRef<UserProfile[]>(users);
+  const currentUserRef = useRef<UserProfile>(currentUser);
+  const cardsRef = useRef<TaxiCard[]>(cards);
+
+  useEffect(() => { requestsRef.current = requests; }, [requests]);
+  useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
+
   const [leaderMappings] = useState<DepartmentLeaderMapping[]>(INITIAL_LEADER_MAPPINGS);
 
   const [activeViewMode, setActiveViewMode] = useState<'mobile' | 'responsive'>('mobile');
@@ -216,6 +247,175 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [supabaseStatus, setSupabaseStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
 
+  // Delta handlers for Realtime changes & In-App Alerts
+  const applyUsersDelta = useCallback((incomingUsers: UserProfile[], isInitial = false) => {
+    const prevUsers = usersRef.current;
+    const prevMe = currentUserRef.current;
+
+    // 1. Check if currentUser status or role changed (e.g. approved by Admin from Telegram Bot)
+    const myUpdatedProfile = incomingUsers.find((u) =>
+      (prevMe.id && u.id === prevMe.id) ||
+      (prevMe.telegramId && u.telegramId && u.telegramId === prevMe.telegramId) ||
+      (prevMe.code && u.code && u.code === prevMe.code)
+    );
+
+    if (myUpdatedProfile) {
+      const roleChanged = myUpdatedProfile.role !== prevMe.role;
+      const statusChanged = myUpdatedProfile.status !== prevMe.status;
+      const isApprovedNow =
+        (prevMe.role === 'pending' || prevMe.role === 'unregistered') &&
+        (myUpdatedProfile.role === 'employee' ||
+          myUpdatedProfile.role === 'leader' ||
+          myUpdatedProfile.role === 'admin' ||
+          myUpdatedProfile.role === 'admin_hr');
+
+      if (
+        roleChanged ||
+        statusChanged ||
+        myUpdatedProfile.name !== prevMe.name ||
+        myUpdatedProfile.department !== prevMe.department ||
+        myUpdatedProfile.leaderName !== prevMe.leaderName
+      ) {
+        setCurrentUser(myUpdatedProfile);
+        currentUserRef.current = myUpdatedProfile;
+        localStorage.setItem(`${STORAGE_KEY}_currentUserId`, myUpdatedProfile.id);
+      }
+
+      if (!isInitial && isApprovedNow) {
+        triggerInAppToast({
+          type: 'success',
+          title: 'Tài khoản đã được duyệt! 🎉',
+          message: `Chào mừng ${myUpdatedProfile.name}. Tài khoản của bạn đã được kích hoạt thành công!`,
+          roleTarget: 'all',
+        });
+      }
+    }
+
+    // 2. If currentUser is Admin, check if new pending user registered
+    if (!isInitial && (prevMe.role === 'admin' || prevMe.role === 'admin_hr' || prevMe.role === 'hr')) {
+      const prevPendingIds = new Set(prevUsers.filter((u) => u.role === 'pending').map((u) => u.id));
+      const newPending = incomingUsers.filter((u) => u.role === 'pending' && !prevPendingIds.has(u.id));
+      for (const u of newPending) {
+        triggerInAppToast({
+          type: 'info',
+          title: 'Thành viên mới đăng ký 👤',
+          message: `${u.name} (${u.department || 'Chưa rõ PB'}) đang chờ duyệt tài khoản.`,
+          roleTarget: 'admin',
+        });
+      }
+    }
+
+    setUsers(incomingUsers);
+    usersRef.current = incomingUsers;
+  }, [triggerInAppToast]);
+
+  const applyRequestsDelta = useCallback((incomingRequests: TaxiRequest[], isInitial = false) => {
+    const prevRequests = requestsRef.current;
+    const prevMe = currentUserRef.current;
+
+    if (!isInitial) {
+      const prevMap = new Map(prevRequests.map((r) => [r.id, r]));
+
+      for (const req of incomingRequests) {
+        const oldReq = prevMap.get(req.id);
+        const isMyOrder = req.employeeId === prevMe.id || req.employeeCode === prevMe.code;
+
+        if (!oldReq) {
+          // New request created
+          if (!isMyOrder) {
+            // Notify Admin
+            if (prevMe.role === 'admin' || prevMe.role === 'admin_hr' || prevMe.role === 'hr') {
+              triggerInAppToast({
+                type: 'info',
+                title: 'Đơn mượn thẻ mới 🚖',
+                message: `${req.employeeName} (${req.department}): ${req.destination || req.purpose}`,
+                roleTarget: 'admin',
+              });
+            }
+            // Notify Leader if pending leader approval
+            if (
+              (prevMe.role === 'leader' || prevMe.isLeader) &&
+              (req.leaderId === prevMe.id || req.department === prevMe.department) &&
+              req.status === 'pending_leader'
+            ) {
+              triggerInAppToast({
+                type: 'warning',
+                title: 'Đơn cần Leader duyệt 📋',
+                message: `${req.employeeName} gửi yêu cầu: ${req.destination || req.purpose}`,
+                roleTarget: 'leader',
+              });
+            }
+          }
+        } else if (oldReq.status !== req.status) {
+          // Status changed!
+          if (isMyOrder) {
+            switch (req.status) {
+              case 'admin_approved':
+              case 'card_assigned':
+                triggerInAppToast({
+                  type: 'success',
+                  title: 'Đơn đã được cấp thẻ! 💳',
+                  message: `Mã thẻ: ${req.cardCode || 'Đã cấp'}. Vui lòng gặp Admin/Lễ tân nhận thẻ.`,
+                  roleTarget: 'employee',
+                });
+                break;
+              case 'in_use':
+                triggerInAppToast({
+                  type: 'info',
+                  title: 'Thẻ đang được sử dụng 🚗',
+                  message: `Thẻ ${req.cardCode || ''} đã bàn giao. Chúc bạn có chuyến đi an toàn!`,
+                  roleTarget: 'employee',
+                });
+                break;
+              case 'completed':
+                triggerInAppToast({
+                  type: 'success',
+                  title: 'Chuyến đi hoàn tất ✅',
+                  message: `Chi phí: ${req.actualCost ? Number(req.actualCost).toLocaleString('vi-VN') + 'đ' : '0đ'}. Cảm ơn bạn!`,
+                  roleTarget: 'employee',
+                });
+                break;
+              case 'rejected':
+                triggerInAppToast({
+                  type: 'error',
+                  title: 'Đơn mượn thẻ bị từ chối ❌',
+                  message: req.rejectReason ? `Lý do: ${req.rejectReason}` : 'Vui lòng kiểm tra lại thông tin đơn.',
+                  roleTarget: 'employee',
+                });
+                break;
+              case 'waitlist_cards':
+              case 'queued':
+                triggerInAppToast({
+                  type: 'warning',
+                  title: 'Đơn vào hàng chờ ⏳',
+                  message: 'Hiện hết thẻ khả dụng, hệ thống đã xếp bạn vào hàng chờ tự động.',
+                  roleTarget: 'employee',
+                });
+                break;
+            }
+          }
+
+          // If current user is Admin and request changed from pending_leader to pending_admin
+          if (
+            (prevMe.role === 'admin' || prevMe.role === 'admin_hr' || prevMe.role === 'hr') &&
+            oldReq.status === 'pending_leader' &&
+            (req.status === 'pending_admin' || req.leaderApprovalStatus === 'approved')
+          ) {
+            triggerInAppToast({
+              type: 'info',
+              title: 'Leader đã phê duyệt đơn 🎯',
+              message: `Leader đã duyệt đơn của ${req.employeeName}. Sẵn sàng cấp thẻ!`,
+              roleTarget: 'admin',
+            });
+          }
+        }
+      }
+    }
+
+    setRequests(incomingRequests);
+    requestsRef.current = incomingRequests;
+  }, [triggerInAppToast]);
+
   // Supabase Realtime & Remote DB Sync
   useEffect(() => {
     let cardChannel: any;
@@ -251,7 +451,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               return u;
             });
-            setUsers(resolved);
+            applyUsersDelta(resolved, true);
           } else {
             setUsers(INITIAL_USERS);
             for (const u of INITIAL_USERS) {
@@ -273,9 +473,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const matched = activeList.find((u) => u.telegramId === tgIdStr);
           if (matched) {
             setCurrentUser(matched);
+            currentUserRef.current = matched;
           } else {
             // New unregistered user opening via Telegram
-            setCurrentUser({
+            const unregisteredUser: UserProfile = {
               id: `unregistered-${tgIdStr}`,
               name: `${tg.first_name || ''} ${tg.last_name || ''}`.trim() || 'Người dùng mới',
               code: '',
@@ -283,7 +484,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               telegramUsername: tg.username ? `@${tg.username}` : '',
               telegramId: tgIdStr,
               role: 'unregistered',
-            });
+            };
+            setCurrentUser(unregisteredUser);
+            currentUserRef.current = unregisteredUser;
           }
         }
 
@@ -291,6 +494,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dbCards = await supabaseService.getCards();
         if (dbCards && dbCards.length > 0) {
           setCards(dbCards);
+          cardsRef.current = dbCards;
         } else {
           // If remote is empty, seed it
           await supabaseService.upsertCards(INITIAL_CARDS);
@@ -299,7 +503,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Load requests from Supabase
         const dbRequests = await supabaseService.getRequests();
         if (dbRequests && dbRequests.length > 0) {
-          setRequests(dbRequests);
+          applyRequestsDelta(dbRequests, true);
         } else {
           // If remote is empty, seed it
           await supabaseService.upsertRequests(INITIAL_REQUESTS);
@@ -309,15 +513,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requestChannel = supabaseService.subscribeToRequests((payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
             const newReq = fromDbRequest(payload.new);
-            setRequests((prev) => {
-              if (prev.some((r) => r.id === newReq.id)) return prev;
-              return [newReq, ...prev];
-            });
+            applyRequestsDelta([newReq, ...requestsRef.current.filter((r) => r.id !== newReq.id)]);
           } else if (payload.eventType === 'UPDATE' && payload.new) {
             const updated = fromDbRequest(payload.new);
-            setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+            applyRequestsDelta(requestsRef.current.map((r) => (r.id === updated.id ? updated : r)));
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            setRequests((prev) => prev.filter((r) => r.id !== payload.old.id));
+            const filtered = requestsRef.current.filter((r) => r.id !== payload.old.id);
+            setRequests(filtered);
+            requestsRef.current = filtered;
           }
         });
 
@@ -325,7 +528,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cardChannel = supabaseService.subscribeToCards((payload) => {
           if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
             const updatedCard = fromDbCard(payload.new);
-            setCards((prev) => prev.map((c) => (c.id === updatedCard.id ? updatedCard : c)));
+            setCards((prev) => {
+              const next = prev.map((c) => (c.id === updatedCard.id ? updatedCard : c));
+              cardsRef.current = next;
+              return next;
+            });
           }
         });
 
@@ -333,13 +540,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userChannel = supabaseService.subscribeToUsers((payload) => {
           if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
             const updatedUser = fromDbUser(payload.new);
-            setUsers((prev) => {
-              const exists = prev.some((u) => u.id === updatedUser.id);
-              if (exists) return prev.map((u) => (u.id === updatedUser.id ? updatedUser : u));
-              return [updatedUser, ...prev];
-            });
+            const currentList = usersRef.current;
+            const exists = currentList.some((u) => u.id === updatedUser.id);
+            const newList = exists
+              ? currentList.map((u) => (u.id === updatedUser.id ? updatedUser : u))
+              : [updatedUser, ...currentList];
+            applyUsersDelta(newList);
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            setUsers((prev) => prev.filter((u) => u.id !== payload.old.id));
+            const filtered = usersRef.current.filter((u) => u.id !== payload.old.id);
+            setUsers(filtered);
+            usersRef.current = filtered;
           }
         });
       } catch (err) {
@@ -355,22 +565,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (requestChannel) supabase.removeChannel(requestChannel);
       if (userChannel) supabase.removeChannel(userChannel);
     };
-  }, []);
+  }, [applyRequestsDelta, applyUsersDelta]);
+
+  // Background Polling Every 3.5s (Guarantees sync even if WebSocket drops)
+  useEffect(() => {
+    if (supabaseStatus !== 'connected') return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const [remoteRequests, remoteUsers, remoteCards] = await Promise.all([
+          supabaseService.getRequests(),
+          supabaseService.getUsers(),
+          supabaseService.getCards(),
+        ]);
+
+        if (remoteRequests && remoteRequests.length > 0) {
+          applyRequestsDelta(remoteRequests);
+        }
+        if (remoteUsers && remoteUsers.length > 0) {
+          const cleaned = remoteUsers.filter((u) => !MOCK_USER_IDS.has(u.id));
+          if (cleaned.length > 0) {
+            const resolved = cleaned.map((u) => {
+              if (u.leaderId && !u.leaderName) {
+                const lead = cleaned.find((l) => l.id === u.leaderId);
+                if (lead) return { ...u, leaderName: lead.name };
+              }
+              return u;
+            });
+            applyUsersDelta(resolved);
+          }
+        }
+        if (remoteCards && remoteCards.length > 0) {
+          setCards(remoteCards);
+          cardsRef.current = remoteCards;
+        }
+      } catch (err) {
+        // Background poll silent fallback
+      }
+    }, 3500);
+
+    return () => clearInterval(intervalId);
+  }, [supabaseStatus, applyRequestsDelta, applyUsersDelta]);
 
   const syncToSupabase = (req?: TaxiRequest, updatedCards?: TaxiCard[]) => {
     if (req) supabaseService.upsertRequest(req).catch((e) => console.warn('Supabase req sync error:', e));
     if (updatedCards) supabaseService.upsertCards(updatedCards).catch((e) => console.warn('Supabase cards sync error:', e));
   };
-
-  // Debounced Auto-sync requests & cards to Supabase when connected
-  useEffect(() => {
-    if (supabaseStatus !== 'connected') return;
-    const timer = setTimeout(() => {
-      supabaseService.upsertRequests(requests).catch(() => {});
-      supabaseService.upsertCards(cards).catch(() => {});
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [requests, cards, supabaseStatus]);
 
   const toggleDarkMode = () => setIsDarkMode((prev) => !prev);
 
@@ -2040,6 +2280,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isDarkMode,
         toggleDarkMode,
         supabaseStatus,
+        toasts,
+        dismissToast,
+        triggerInAppToast,
         createRequest,
         directDispatchCard,
         cancelRequest,

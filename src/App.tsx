@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TelegramHeader } from './components/TelegramHeader';
+import { InAppNotificationToast } from './components/common/InAppNotificationToast';
 import { EmployeeRegisterView } from './components/employee/EmployeeRegisterView';
 import { EmployeeRequestsView } from './components/employee/EmployeeRequestsView';
 import { LeaderApprovalsView } from './components/leader/LeaderApprovalsView';
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { currentUser, users, config, requests, activeViewMode } = useApp();
+  const { currentUser, users, config, requests, activeViewMode, toasts, dismissToast } = useApp();
 
   // Initialize Telegram WebApp SDK if opened in real Telegram client
   useEffect(() => {
@@ -87,6 +88,9 @@ const MainAppContent: React.FC = () => {
               : 'max-w-4xl min-h-[800px] shadow-lg border border-slate-200 dark:border-slate-800'
           }`}
         >
+          {/* In-App Realtime Notification Toast */}
+          <InAppNotificationToast notifications={toasts} onDismiss={dismissToast} />
+
           {/* Telegram Mini App simulated top app bar */}
           <TelegramHeader
             onOpenSettings={() => setSubView('settings')}
