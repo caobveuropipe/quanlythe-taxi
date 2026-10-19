@@ -76,6 +76,7 @@ interface AppContextType {
   assignCardFromWaitlist: (requestId: string, cardCode: string) => { success: boolean; message: string };
   confirmHandover: (requestId: string, actualCardCode: string, operatorName: string) => { success: boolean; message: string };
   releaseReservedCard: (requestId: string, reason: string, operatorName: string) => { success: boolean; message: string };
+  releaseCardDirectly: (cardId: string, reason?: string) => { success: boolean; message: string };
   requestYieldCard: (requestId: string, reason?: string, operatorName?: string) => { success: boolean; message: string };
   respondYieldCard: (requestId: string, accepted: boolean) => { success: boolean; message: string };
   confirmReturnAndBilling: (params: {
@@ -1624,9 +1625,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    if (targetReq.reservedCardCode) {
-      autoAssignCardIfWaitlisted(targetReq.reservedCardCode, requestId);
-    }
+    // Tìm và giải phóng TẤT CẢ các thẻ đang liên kết với yêu cầu này (xử lý triệt để cả khi nhiều thẻ bị kẹt)
+    const cardsToRelease = cardsRef.current.filter(
+      (c) => c.currentRequestId === requestId || c.code === targetReq.reservedCardCode
+    );
+
+    cardsToRelease.forEach((c) => {
+      autoAssignCardIfWaitlisted(c.code, requestId);
+    });
 
     const updatedReq: TaxiRequest = {
       ...targetReq,
@@ -1634,16 +1640,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       releasedReason: reason.trim(),
       releasedBy: operatorName,
       releasedAt: new Date().toISOString(),
+      reservedCardCode: undefined,
     };
 
     setRequests((prev) =>
       prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
     syncToSupabase(updatedReq, cardsRef.current);
 
     return {
       success: true,
       message: 'Đã giải phóng thẻ về kho và hủy lượt giữ thẻ thành công.',
+    };
+  };
+
+  // 8b. Release a specific card directly from inventory (Card-centric)
+  const releaseCardDirectly = (cardId: string, reason?: string) => {
+    const card = cardsRef.current.find((c) => c.id === cardId);
+    if (!card) return { success: false, message: 'Không tìm thấy thẻ này trong hệ thống.' };
+
+    const reqId = card.currentRequestId;
+    const cardCode = card.code;
+
+    // 1. Đặt thẻ về available trong bộ nhớ
+    const nextCards = cardsRef.current.map((c) =>
+      c.id === cardId
+        ? {
+            ...c,
+            status: 'available' as const,
+            currentRequestId: undefined,
+            assignedToName: undefined,
+            assignedToCode: undefined,
+          }
+        : c
+    );
+    setCards(nextCards);
+    cardsRef.current = nextCards;
+
+    let updatedReq: TaxiRequest | undefined = undefined;
+
+    // 2. Nếu thẻ đang liên kết với một đơn
+    if (reqId) {
+      const targetReq = requestsRef.current.find((r) => r.id === reqId);
+      if (targetReq) {
+        // Kiểm tra xem đơn này còn thẻ nào khác đang giữ không
+        const otherCards = nextCards.filter(
+          (c) => c.currentRequestId === reqId && c.id !== cardId && (c.status === 'reserved' || c.status === 'in_use')
+        );
+
+        if (otherCards.length === 0 && targetReq.status === 'pending_handover') {
+          // Không còn thẻ nào khác giữ -> chuyển đơn về waitlist_cards
+          updatedReq = {
+            ...targetReq,
+            status: 'waitlist_cards',
+            isWaitlisted: true,
+            reservedCardCode: undefined,
+          };
+          setRequests((prev) => prev.map((r) => (r.id === reqId ? updatedReq! : r)));
+          requestsRef.current = requestsRef.current.map((r) => (r.id === reqId ? updatedReq! : r));
+        } else if (otherCards.length > 0 && targetReq.reservedCardCode === cardCode) {
+          // Còn thẻ khác -> đổi reservedCardCode sang thẻ kia
+          updatedReq = {
+            ...targetReq,
+            reservedCardCode: otherCards[0].code,
+          };
+          setRequests((prev) => prev.map((r) => (r.id === reqId ? updatedReq! : r)));
+          requestsRef.current = requestsRef.current.map((r) => (r.id === reqId ? updatedReq! : r));
+        }
+      }
+    }
+
+    // 3. Tự động kiểm tra xem có đơn nào trong waitlist cần thẻ này không
+    autoAssignCardIfWaitlisted(cardCode, reqId);
+
+    // 4. Đồng bộ tức thì lên Supabase
+    syncToSupabase(updatedReq, cardsRef.current);
+
+    return {
+      success: true,
+      message: `Đã giải phóng thẻ ${cardCode} về kho thành công!`,
     };
   };
 
@@ -2342,6 +2418,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         assignCardFromWaitlist,
         confirmHandover,
         releaseReservedCard,
+        releaseCardDirectly,
         requestYieldCard,
         respondYieldCard,
         confirmReturnAndBilling,
