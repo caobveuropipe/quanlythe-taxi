@@ -149,6 +149,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                     ? 'Leader'
                     : currentUser.role === 'admin'
                     ? 'Admin'
+                    : currentUser.role === 'pending'
+                    ? 'Đang chờ duyệt'
+                    : currentUser.role === 'rejected'
+                    ? 'Bị từ chối'
+                    : currentUser.role === 'unregistered'
+                    ? 'Chưa đăng ký'
                     : 'Nhân sự'}
                 </div>
               </div>
@@ -220,6 +226,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   {currentUser.role === 'admin' && 'Admin'}
                   {currentUser.role === 'hr' && 'HR Vận hành'}
                   {currentUser.role === 'admin_hr' && 'Admin kiêm HR'}
+                  {currentUser.role === 'pending' && 'Đang chờ Admin duyệt'}
+                  {currentUser.role === 'rejected' && 'Chưa được cấp phép'}
+                  {currentUser.role === 'unregistered' && 'Chưa đăng ký'}
                 </div>
               </div>
             </div>

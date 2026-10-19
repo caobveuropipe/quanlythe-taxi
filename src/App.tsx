@@ -54,7 +54,10 @@ const MainAppContent: React.FC = () => {
     config.requireLeaderApproval;
 
   const isPendingOrRejected =
-    currentUser.role === 'pending' || currentUser.role === 'rejected';
+    currentUser.role === 'pending' ||
+    currentUser.role === 'rejected' ||
+    currentUser.role === 'unregistered' ||
+    !currentUser.code;
 
   const pendingUsersCount = users.filter((u) => u.role === 'pending').length;
 

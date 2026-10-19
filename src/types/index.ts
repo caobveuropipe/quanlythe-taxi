@@ -1,4 +1,4 @@
-export type UserRole = 'employee' | 'leader' | 'admin' | 'hr' | 'admin_hr' | 'pending' | 'rejected';
+export type UserRole = 'employee' | 'leader' | 'admin' | 'hr' | 'admin_hr' | 'pending' | 'rejected' | 'unregistered';
 
 export interface UserProfile {
   id: string;

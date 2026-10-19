@@ -274,7 +274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               department: '',
               telegramUsername: tg.username ? `@${tg.username}` : '',
               telegramId: tgIdStr,
-              role: 'pending',
+              role: 'unregistered',
             });
           }
         }
@@ -1376,18 +1376,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     telegramId?: string;
     telegramUsername?: string;
   }) => {
-    const existing = users.find((u) => u.code.toUpperCase() === params.code.toUpperCase());
-    if (existing && existing.role !== 'pending' && existing.role !== 'rejected') {
+    const trimmedCode = params.code.trim().toUpperCase();
+    const existingByCode = users.find((u) => u.code && u.code.toUpperCase() === trimmedCode);
+    if (
+      existingByCode &&
+      existingByCode.role !== 'pending' &&
+      existingByCode.role !== 'rejected' &&
+      existingByCode.role !== 'unregistered' &&
+      existingByCode.id !== currentUser.id &&
+      (params.telegramId ? existingByCode.telegramId !== params.telegramId : true)
+    ) {
       return { success: false, message: `Mã nhân sự ${params.code} đã tồn tại và đã được kích hoạt trong hệ thống!` };
     }
 
-    const newUserId = existing ? existing.id : `user-${Date.now()}`;
+    const existingUser = (params.telegramId ? users.find((u) => u.telegramId === params.telegramId) : null) || existingByCode;
+    const targetId = existingUser ? existingUser.id : (currentUser.id.startsWith('unregistered-') ? `user-${params.telegramId || Date.now()}` : currentUser.id);
+
     const newUser: UserProfile = {
-      id: newUserId,
-      code: params.code.toUpperCase(),
-      name: params.name,
-      department: params.department,
-      leaderName: params.leaderName,
+      id: targetId,
+      code: trimmedCode,
+      name: params.name.trim(),
+      department: params.department.trim(),
+      leaderName: params.leaderName.trim(),
       telegramId: params.telegramId || '',
       telegramUsername: params.telegramUsername || '',
       role: 'pending',
@@ -1395,7 +1405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setUsers((prev) => {
-      const filtered = prev.filter((u) => u.id !== newUserId);
+      const filtered = prev.filter((u) => u.id !== targetId && (params.telegramId ? u.telegramId !== params.telegramId : true));
       return [newUser, ...filtered];
     });
     setCurrentUser(newUser);
@@ -1584,13 +1594,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetToNewRegistration = () => {
     const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
     setCurrentUser({
-      id: `new-user-${Date.now()}`,
+      id: `unregistered-${tg?.id || Date.now()}`,
       name: tg?.first_name ? `${tg.first_name} ${tg.last_name || ''}`.trim() : '',
       code: '',
       department: '',
       telegramUsername: tg?.username ? `@${tg.username}` : '',
       telegramId: tg?.id ? String(tg.id) : '',
-      role: 'pending',
+      role: 'unregistered',
     });
   };
 
