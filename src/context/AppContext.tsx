@@ -28,6 +28,7 @@ import {
 } from '../data/seedData';
 import { supabaseService, fromDbRequest, fromDbCard, fromDbUser } from '../services/supabaseService';
 import { supabase } from '../lib/supabaseClient';
+import { formatVietnameseDateTime, getRelativeTimeNotice } from '../utils/dateUtils';
 
 interface AppContextType {
   currentUser: UserProfile;
@@ -406,7 +407,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newReqId = `REQ-2026-${Math.floor(100 + requests.length + 1)}`;
+    const directLeader = currentUser.leaderId ? users.find((u) => u.id === currentUser.leaderId) : null;
     const leaderMapping = getLeaderForUser(currentUser);
+    const resolvedLeaderName = directLeader?.name || leaderMapping?.leaderName;
+    const resolvedLeaderId = directLeader?.id || leaderMapping?.leaderId;
+    const resolvedLeaderTelegramId = directLeader?.telegramId || leaderMapping?.leaderTelegramId;
     const requireLeader = config.requireLeaderApproval;
     const now = new Date().toISOString();
 
@@ -422,9 +427,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: now,
       estimatedStartTime: estimatedStartTime?.trim() || now,
       leaderApprovalRequired: requireLeader,
-      leaderId: leaderMapping?.leaderId,
-      leaderName: leaderMapping?.leaderName,
-      leaderTelegramId: leaderMapping?.leaderTelegramId,
+      leaderId: resolvedLeaderId,
+      leaderName: resolvedLeaderName,
+      leaderTelegramId: resolvedLeaderTelegramId,
       leaderApprovalStatus: undefined,
       adminApprovalStatus: 'pending',
       isWaitlisted: false,
@@ -435,9 +440,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRequests((prev) => [newRequest, ...prev]);
     syncToSupabase(newRequest);
 
+    // Notify all Admins / HR on Telegram with inline approval buttons
+    const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+    const adminRecipients = users
+      .filter((u) => (u.role === 'admin_hr' || u.role === 'admin') && u.telegramId)
+      .map((u) => u.telegramId);
+
+    const recipientSet = new Set(['5139629652', ...adminRecipients]);
+    const availableCardsCount = cards.filter((c) => c.status === 'available').length;
+    const timeDisplay = formatVietnameseDateTime(newRequest.estimatedStartTime || newRequest.createdAt);
+    const relativeNotice = getRelativeTimeNotice(newRequest.estimatedStartTime || newRequest.createdAt);
+
+    const orderText = `🚕 <b>CÓ YÊU CẦU MƯỢN THẺ TAXI MỚI!</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Người mượn: <b>${currentUser.name}</b> (Mã: <code>${currentUser.code}</code>)\n• Bộ phận: <b>${currentUser.department}</b>\n• Leader quản lý: <b>${resolvedLeaderName || 'Chưa cung cấp'}</b>\n• Thời gian đi: <b>${timeDisplay}</b>${relativeNotice ? ` (<i>${relativeNotice}</i>)` : ''}\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n${clientTag?.trim() ? `• Thẻ khách/Dự án: <b>${clientTag.trim()}</b>\n` : ''}\n💳 <i>Kho thẻ: ${availableCardsCount > 0 ? `Còn <b>${availableCardsCount}</b> thẻ sẵn sàng` : '<b>Hết thẻ sẵn sàng</b> (sẽ tự động xếp hàng chờ)'}</i>\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ nhanh hoặc mở Mini App:</i>`;
+
+    const orderReplyMarkup = {
+      inline_keyboard: [
+        [
+          { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${newReqId}` },
+          { text: '❌ Từ chối', callback_data: `reject_req_${newReqId}` },
+        ],
+        [
+          { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+        ],
+      ],
+    };
+
+    try {
+      // 1. Gửi thông báo có nút duyệt cho tất cả Admin/HR
+      for (const adminId of Array.from(recipientSet)) {
+        if (adminId && adminId.trim()) {
+          fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: adminId,
+              text: orderText,
+              parse_mode: 'HTML',
+              reply_markup: orderReplyMarkup,
+            }),
+          }).catch((err) => console.warn('Notify admin order error for:', adminId, err));
+        }
+      }
+
+      // 2. Nếu Leader quản lý có Telegram và không nằm trong ban Admin, gửi thông báo cập nhật
+      if (resolvedLeaderTelegramId && !recipientSet.has(resolvedLeaderTelegramId)) {
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: resolvedLeaderTelegramId,
+            text: `ℹ️ <b>THÀNH VIÊN TRONG BỘ PHẬN TẠO YÊU CẦU MƯỢN THẺ TAXI</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Nhân sự: <b>${currentUser.name}</b> (<code>${currentUser.code}</code>)\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n• Thời gian đi: <b>${timeDisplay}</b>\n\nĐơn đã chuyển đến bộ phận Admin/HR để thẩm định cấp thẻ.`,
+            parse_mode: 'HTML',
+          }),
+        }).catch((err) => console.warn('Notify leader order info error:', err));
+      }
+    } catch (err) {
+      console.warn('Telegram notify order error:', err);
+    }
+
     return {
       success: true,
-      message: 'Gửi yêu cầu mượn thẻ thành công!',
+      message: 'Gửi yêu cầu mượn thẻ thành công! Đã gửi thông báo đến ban Quản trị.',
       requestId: newReqId,
     };
   };

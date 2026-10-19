@@ -46,6 +46,7 @@ Trong suốt phiên làm việc, hệ thống đã trải qua các đợt rà so
 | **24** | *"Người dùng đã điền tên leader rồi nhưng thông báo của super admin lại bảo là không có, cũng không có chỗ nào cho super admin hoặc admin cấp role..."* | Liên kết Leader & Phân quyền | ✅ Đã tự tạo bản ghi Leader trong `users` và cho phép chọn quyền trực tiếp khi duyệt |
 | **25** | *"chỉ có 1 super admin duy nhất nhận được tin nhắn này à? tự động gửi cho tất cả admin_hr, khi 1 admin_hr duyệt thì sẽ thông báo cho những người còn lại là admin đó đã duyệt..."* | Thông báo Đa Admin | ✅ Đã phát tin nhắn cho tất cả tài khoản `admin_hr` và `admin`, kèm thông báo đồng bộ khi 1 admin duyệt |
 | **26** | *"Thêm nữa là cần 1 giao diện trên miniapp để quản lý người dùng: tìm kiếm, sửa vai trò, sửa leader"* | Quản lý người dùng MiniApp | ✅ Đã xây dựng [AdminUserManagementView.tsx](file:///d:/Project_VCC/Quan%20ly%20the%20taxi/src/components/admin/AdminUserManagementView.tsx) đầy đủ tính năng tìm kiếm tức thì, lọc vai trò, sửa tên, mã, phòng ban, đổi role và sửa Leader quản lý |
+| **27** | *"thêm nữa là khi người dùng order thì không có thông báo cho admin, cũng cần có phương án cho việc này"* | Thông báo Admin khi tạo đơn mượn thẻ | ✅ Đã phát tin nhắn Telegram kèm nút inline `[✅ Duyệt cấp thẻ]` / `[❌ Từ chối]` tới toàn bộ `admin_hr` và `admin`, kèm đồng bộ realtime và thông báo cho nhân viên mượn |
 
 ---
 
