@@ -567,50 +567,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [applyRequestsDelta, applyUsersDelta]);
 
-  // Background Polling Every 3.5s (Guarantees sync even if WebSocket drops)
+  const syncToSupabase = (req?: TaxiRequest, updatedCards?: TaxiCard[]) => {
+    if (req) {
+      requestsRef.current = requestsRef.current.map((r) => (r.id === req.id ? req : r));
+      if (!requestsRef.current.some((r) => r.id === req.id)) {
+        requestsRef.current = [req, ...requestsRef.current];
+      }
+      supabaseService.upsertRequest(req).catch((e) => console.warn('Supabase req sync error:', e));
+    }
+    if (updatedCards) {
+      cardsRef.current = updatedCards;
+      supabaseService.upsertCards(updatedCards).catch((e) => console.warn('Supabase cards sync error:', e));
+    }
+  };
+
+  // Immediate fresh sync function
+  const fetchFreshData = useCallback(async () => {
+    if (supabaseStatus !== 'connected') return;
+    try {
+      const [remoteRequests, remoteUsers, remoteCards] = await Promise.all([
+        supabaseService.getRequests(),
+        supabaseService.getUsers(),
+        supabaseService.getCards(),
+      ]);
+
+      if (remoteRequests && remoteRequests.length > 0) {
+        applyRequestsDelta(remoteRequests);
+      }
+      if (remoteUsers && remoteUsers.length > 0) {
+        const cleaned = remoteUsers.filter((u) => !MOCK_USER_IDS.has(u.id));
+        if (cleaned.length > 0) {
+          const resolved = cleaned.map((u) => {
+            if (u.leaderId && !u.leaderName) {
+              const lead = cleaned.find((l) => l.id === u.leaderId);
+              if (lead) return { ...u, leaderName: lead.name };
+            }
+            return u;
+          });
+          applyUsersDelta(resolved);
+        }
+      }
+      if (remoteCards && remoteCards.length > 0) {
+        setCards(remoteCards);
+        cardsRef.current = remoteCards;
+      }
+    } catch (err) {
+      // Background poll silent fallback
+    }
+  }, [supabaseStatus, applyRequestsDelta, applyUsersDelta]);
+
+  // Background Polling Every 2.0s & Instant Pull when app regains Focus / Visible
   useEffect(() => {
     if (supabaseStatus !== 'connected') return;
 
-    const intervalId = setInterval(async () => {
-      try {
-        const [remoteRequests, remoteUsers, remoteCards] = await Promise.all([
-          supabaseService.getRequests(),
-          supabaseService.getUsers(),
-          supabaseService.getCards(),
-        ]);
+    // 1. Polling interval
+    const intervalId = setInterval(fetchFreshData, 2000);
 
-        if (remoteRequests && remoteRequests.length > 0) {
-          applyRequestsDelta(remoteRequests);
-        }
-        if (remoteUsers && remoteUsers.length > 0) {
-          const cleaned = remoteUsers.filter((u) => !MOCK_USER_IDS.has(u.id));
-          if (cleaned.length > 0) {
-            const resolved = cleaned.map((u) => {
-              if (u.leaderId && !u.leaderName) {
-                const lead = cleaned.find((l) => l.id === u.leaderId);
-                if (lead) return { ...u, leaderName: lead.name };
-              }
-              return u;
-            });
-            applyUsersDelta(resolved);
-          }
-        }
-        if (remoteCards && remoteCards.length > 0) {
-          setCards(remoteCards);
-          cardsRef.current = remoteCards;
-        }
-      } catch (err) {
-        // Background poll silent fallback
+    // 2. Instant sync when user switches back from Telegram to Mini App
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        fetchFreshData();
       }
-    }, 3500);
+    };
+    const handleFocus = () => {
+      fetchFreshData();
+    };
 
-    return () => clearInterval(intervalId);
-  }, [supabaseStatus, applyRequestsDelta, applyUsersDelta]);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
 
-  const syncToSupabase = (req?: TaxiRequest, updatedCards?: TaxiCard[]) => {
-    if (req) supabaseService.upsertRequest(req).catch((e) => console.warn('Supabase req sync error:', e));
-    if (updatedCards) supabaseService.upsertCards(updatedCards).catch((e) => console.warn('Supabase cards sync error:', e));
-  };
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [supabaseStatus, fetchFreshData]);
 
   const toggleDarkMode = () => setIsDarkMode((prev) => !prev);
 
@@ -893,21 +924,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // Update Card: set to in_use
-    setCards((prev) =>
-      prev.map((c) =>
-        c.code === params.cardCode
-          ? {
-              ...c,
-              status: 'in_use',
-              currentRequestId: newReqId,
-              assignedToName: employeeName,
-              assignedToCode: employeeCode,
-            }
-          : c
-      )
+    const nextCards = cardsRef.current.map((c) =>
+      c.code === params.cardCode
+        ? {
+            ...c,
+            status: 'in_use' as const,
+            currentRequestId: newReqId,
+            assignedToName: employeeName,
+            assignedToCode: employeeCode,
+          }
+        : c
     );
+    setCards(nextCards);
+    cardsRef.current = nextCards;
 
     setRequests((prev) => [newRequest, ...prev]);
+    requestsRef.current = [newRequest, ...requestsRef.current];
+    syncToSupabase(newRequest, nextCards);
 
     return {
       success: true,
@@ -944,19 +977,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (waitlisted.length === 0) {
         // No waitlist: card becomes available in inventory
-        setCards((prevCards) =>
-          prevCards.map((c) =>
-            c.code === cardCode
-              ? {
-                  ...c,
-                  status: 'available',
-                  currentRequestId: undefined,
-                  assignedToName: undefined,
-                  assignedToCode: undefined,
-                }
-              : c
-          )
+        const nextCards = cardsRef.current.map((c) =>
+          c.code === cardCode
+            ? {
+                ...c,
+                status: 'available' as const,
+                currentRequestId: undefined,
+                assignedToName: undefined,
+                assignedToCode: undefined,
+              }
+            : c
         );
+        setCards(nextCards);
+        cardsRef.current = nextCards;
+        syncToSupabase(undefined, nextCards);
         return prevReqs;
       }
 
@@ -964,29 +998,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assignedReq = waitlisted[0];
       const now = new Date().toISOString();
 
-      setCards((prevCards) =>
-        prevCards.map((c) =>
-          c.code === cardCode
-            ? {
-                ...c,
-                status: 'reserved',
-                currentRequestId: assignedReq!.id,
-                assignedToName: assignedReq!.employeeName,
-                assignedToCode: assignedReq!.employeeCode,
-              }
-            : c
-        )
+      const nextCards = cardsRef.current.map((c) =>
+        c.code === cardCode
+          ? {
+              ...c,
+              status: 'reserved' as const,
+              currentRequestId: assignedReq!.id,
+              assignedToName: assignedReq!.employeeName,
+              assignedToCode: assignedReq!.employeeCode,
+            }
+          : c
       );
+      setCards(nextCards);
+      cardsRef.current = nextCards;
+
+      const updatedWaitlistReq: TaxiRequest = {
+        ...assignedReq!,
+        status: 'pending_handover' as const,
+        isWaitlisted: false,
+        reservedCardCode: cardCode,
+        handoverReadyAt: now,
+      };
+      syncToSupabase(updatedWaitlistReq, nextCards);
 
       return prevReqs.map((req) => {
         if (req.id !== assignedReq!.id) return req;
-        return {
-          ...req,
-          status: 'pending_handover',
-          isWaitlisted: false,
-          reservedCardCode: cardCode,
-          handoverReadyAt: now, // FR-01: Ghi nhận mốc sẵn sàng nhận thẻ để tính chính xác timeline
-        };
+        return updatedWaitlistReq;
       });
     });
 
@@ -1015,17 +1052,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       autoAssignCardIfWaitlisted(target.reservedCardCode, requestId);
     }
 
+    const updatedReq: TaxiRequest = {
+      ...target,
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      cancelledReason: reason?.trim() || 'Người tạo chủ động hủy yêu cầu khi chưa được duyệt/cấp.',
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          status: 'cancelled',
-          cancelledAt: new Date().toISOString(),
-          cancelledReason: reason?.trim() || 'Người tạo chủ động hủy yêu cầu khi chưa được duyệt/cấp.',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+    syncToSupabase(updatedReq);
 
     return { success: true, message: 'Đã hủy yêu cầu mượn thẻ thành công.' };
   };
@@ -1040,19 +1078,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const now = new Date().toISOString();
+    const updatedReq: TaxiRequest = {
+      ...target,
+      leaderApprovalStatus: 'approved',
+      leaderApprovalComment: comment?.trim() || 'Leader đã đồng ý.',
+      leaderApprovedAt: now,
+      leaderDecisionAt: now,
+      status: 'pending_admin',
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          leaderApprovalStatus: 'approved',
-          leaderApprovalComment: comment?.trim() || 'Leader đã đồng ý.',
-          leaderApprovedAt: now,
-          leaderDecisionAt: now,
-          status: 'pending_admin',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+    syncToSupabase(updatedReq);
 
     // 1. Thông báo cho nhân viên biết Leader đã đồng ý và đơn đang chuyển Admin cấp thẻ
     notifyEmployeeOrderProgress(
@@ -1133,19 +1172,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const now = new Date().toISOString();
+    const updatedReq: TaxiRequest = {
+      ...target,
+      leaderApprovalStatus: 'rejected',
+      leaderApprovalComment: reason.trim(),
+      leaderApprovedAt: now,
+      leaderDecisionAt: now,
+      status: 'rejected_leader',
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          leaderApprovalStatus: 'rejected',
-          leaderApprovalComment: reason.trim(),
-          leaderApprovedAt: now,
-          leaderDecisionAt: now,
-          status: 'rejected_leader',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+    syncToSupabase(updatedReq);
 
     // Thông báo cho nhân viên biết đơn bị Leader từ chối
     notifyEmployeeOrderProgress(
@@ -1190,40 +1230,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (availableCard) {
       // Reserve card and move to pending_handover
-      setCards((prev) =>
-        prev.map((c) =>
-          c.id === availableCard.id
-            ? {
-                ...c,
-                status: 'reserved',
-                currentRequestId: requestId,
-                assignedToName: target.employeeName,
-                assignedToCode: target.employeeCode,
-              }
-            : c
-        )
+      const nextCards = cardsRef.current.map((c) =>
+        c.id === availableCard.id
+          ? {
+              ...c,
+              status: 'reserved' as const,
+              currentRequestId: requestId,
+              assignedToName: target.employeeName,
+              assignedToCode: target.employeeCode,
+            }
+          : c
       );
+      setCards(nextCards);
+      cardsRef.current = nextCards;
+
+      const updatedReq: TaxiRequest = {
+        ...target,
+        leaderApprovalStatus: 'approved',
+        leaderApprovalComment: 'Leader hoàn tác từ chối sang ĐỒNG Ý.',
+        leaderApprovedAt: now,
+        leaderDecisionAt: now,
+        adminApprovalStatus: 'approved',
+        adminApprovalComment: 'Tự động duyệt sau khi Leader hoàn tác.',
+        adminApprovedAt: now,
+        adminApproverName: 'Hệ thống (Theo Leader hoàn tác)',
+        isWaitlisted: false,
+        reservedCardCode: availableCard.code,
+        handoverReadyAt: now,
+        status: 'pending_handover',
+      };
 
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            leaderApprovalStatus: 'approved',
-            leaderApprovalComment: 'Leader hoàn tác từ chối sang ĐỒNG Ý.',
-            leaderApprovedAt: now,
-            leaderDecisionAt: now,
-            adminApprovalStatus: 'approved',
-            adminApprovalComment: 'Tự động duyệt sau khi Leader hoàn tác.',
-            adminApprovedAt: now,
-            adminApproverName: 'Hệ thống (Theo Leader hoàn tác)',
-            isWaitlisted: false,
-            reservedCardCode: availableCard.code,
-            handoverReadyAt: now,
-            status: 'pending_handover',
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+      syncToSupabase(updatedReq, nextCards);
 
       return {
         success: true,
@@ -1231,24 +1272,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     } else {
       // Out of cards -> Enter Waitlist
+      const updatedReq: TaxiRequest = {
+        ...target,
+        leaderApprovalStatus: 'approved',
+        leaderApprovalComment: 'Leader hoàn tác sang ĐỒNG Ý (Kho hết thẻ).',
+        leaderApprovedAt: now,
+        leaderDecisionAt: now,
+        adminApprovalStatus: 'approved',
+        adminApprovalComment: 'Admin tự động duyệt (chờ thẻ vào kho).',
+        adminApprovedAt: now,
+        adminApproverName: 'Hệ thống (Theo Leader hoàn tác)',
+        isWaitlisted: true,
+        status: 'waitlist_cards',
+      };
+
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            leaderApprovalStatus: 'approved',
-            leaderApprovalComment: 'Leader hoàn tác sang ĐỒNG Ý (Kho hết thẻ).',
-            leaderApprovedAt: now,
-            leaderDecisionAt: now,
-            adminApprovalStatus: 'approved',
-            adminApprovalComment: 'Admin tự động duyệt (chờ thẻ vào kho).',
-            adminApprovedAt: now,
-            adminApproverName: 'Hệ thống (Theo Leader hoàn tác)',
-            isWaitlisted: true,
-            status: 'waitlist_cards',
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+      syncToSupabase(updatedReq);
 
       return {
         success: true,
@@ -1267,37 +1309,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (availableCard) {
       // Reserve card
-      setCards((prev) =>
-        prev.map((c) =>
-          c.id === availableCard.id
-            ? {
-                ...c,
-                status: 'reserved',
-                currentRequestId: requestId,
-                assignedToName: target.employeeName,
-                assignedToCode: target.employeeCode,
-              }
-            : c
-        )
+      const nextCards = cardsRef.current.map((c) =>
+        c.id === availableCard.id
+          ? {
+              ...c,
+              status: 'reserved' as const,
+              currentRequestId: requestId,
+              assignedToName: target.employeeName,
+              assignedToCode: target.employeeCode,
+            }
+          : c
       );
+      setCards(nextCards);
+      cardsRef.current = nextCards;
 
       const now = new Date().toISOString();
+      const updatedReq: TaxiRequest = {
+        ...target,
+        adminApprovalStatus: 'approved',
+        adminApprovalComment: comment?.trim() || 'Admin đã duyệt.',
+        adminApprovedAt: now,
+        adminApproverName: currentUser.name,
+        isWaitlisted: false,
+        reservedCardCode: availableCard.code,
+        handoverReadyAt: now, // FR-01: Ghi nhận mốc sẵn sàng nhận thẻ
+        status: 'pending_handover',
+      };
+
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            adminApprovalStatus: 'approved',
-            adminApprovalComment: comment?.trim() || 'Admin đã duyệt.',
-            adminApprovedAt: now,
-            adminApproverName: currentUser.name,
-            isWaitlisted: false,
-            reservedCardCode: availableCard.code,
-            handoverReadyAt: now, // FR-01: Ghi nhận mốc sẵn sàng nhận thẻ
-            status: 'pending_handover',
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+      syncToSupabase(updatedReq, nextCards);
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
@@ -1317,20 +1360,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       // Out of cards -> Enter Waitlist
       const now = new Date().toISOString();
+      const updatedReq: TaxiRequest = {
+        ...target,
+        adminApprovalStatus: 'approved',
+        adminApprovalComment: comment?.trim() || 'Admin đã duyệt (chờ thẻ vào kho).',
+        adminApprovedAt: now,
+        adminApproverName: currentUser.name,
+        isWaitlisted: true,
+        status: 'waitlist_cards',
+      };
+
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            adminApprovalStatus: 'approved',
-            adminApprovalComment: comment?.trim() || 'Admin đã duyệt (chờ thẻ vào kho).',
-            adminApprovedAt: now,
-            adminApproverName: currentUser.name,
-            isWaitlisted: true,
-            status: 'waitlist_cards',
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
+      syncToSupabase(updatedReq);
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
@@ -1357,32 +1401,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const target = requests.find((r) => r.id === requestId);
+    if (!target) return { success: false, message: 'Không tìm thấy yêu cầu.' };
+
+    const updatedReq: TaxiRequest = {
+      ...target,
+      adminApprovalStatus: 'rejected',
+      adminApprovalComment: reason.trim(),
+      adminApprovedAt: new Date().toISOString(),
+      adminApproverName: currentUser.name,
+      status: 'rejected_admin',
+    };
 
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          adminApprovalStatus: 'rejected',
-          adminApprovalComment: reason.trim(),
-          adminApprovedAt: new Date().toISOString(),
-          adminApproverName: currentUser.name,
-          status: 'rejected_admin',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq);
 
     syncEditTelegramMessages(
       `msg_track_req_${requestId}`,
       `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target?.employeeName || ''}</b>\n• Người từ chối: <b>${currentUser.name} (qua Mini App)</b>\n• Lý do: <i>${reason.trim()}</i>`
     );
 
-    if (target) {
-      notifyEmployeeOrderProgress(
-        target.employeeId,
-        `❌ <b>YÊU CẦU MƯỢN THẺ BỊ ADMIN TỪ CHỐI</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người từ chối: Admin <b>${currentUser.name}</b>\n• Lý do: <i>${reason.trim()}</i>`
-      );
-    }
+    notifyEmployeeOrderProgress(
+      target.employeeId,
+      `❌ <b>YÊU CẦU MƯỢN THẺ BỊ ADMIN TỪ CHỐI</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người từ chối: Admin <b>${currentUser.name}</b>\n• Lý do: <i>${reason.trim()}</i>`
+    );
 
     return { success: true, message: 'Đã từ chối yêu cầu.' };
   };
@@ -1471,31 +1514,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
     // Reserve card
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === card.id
-          ? {
-              ...c,
-              status: 'reserved',
-              currentRequestId: requestId,
-              assignedToName: targetReq.employeeName,
-              assignedToCode: targetReq.employeeCode,
-            }
-          : c
-      )
+    const nextCards = cards.map((c) =>
+      c.id === card.id
+        ? {
+            ...c,
+            status: 'reserved' as const,
+            currentRequestId: requestId,
+            assignedToName: targetReq.employeeName,
+            assignedToCode: targetReq.employeeCode,
+          }
+        : c
     );
+    setCards(nextCards);
+
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      isWaitlisted: false,
+      reservedCardCode: cardCode,
+      status: 'pending_handover',
+    };
 
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          isWaitlisted: false,
-          reservedCardCode: cardCode,
-          status: 'pending_handover',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq, nextCards);
 
     // Thông báo cho nhân viên biết đã được cấp thẻ từ hàng chờ
     notifyEmployeeOrderProgress(
@@ -1524,44 +1566,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
+    let nextCards = [...cards];
     // If previously another card was reserved, release it if different
     if (targetReq.reservedCardCode && targetReq.reservedCardCode !== actualCardCode) {
-      setCards((prev) =>
-        prev.map((c) =>
-          c.code === targetReq.reservedCardCode && c.status === 'reserved'
-            ? { ...c, status: 'available', currentRequestId: undefined, assignedToName: undefined }
-            : c
-        )
+      nextCards = nextCards.map((c) =>
+        c.code === targetReq.reservedCardCode && c.status === 'reserved'
+          ? { ...c, status: 'available' as const, currentRequestId: undefined, assignedToName: undefined }
+          : c
       );
     }
 
     // Set target card as in_use
-    setCards((prev) =>
-      prev.map((c) =>
-        c.code === actualCardCode
-          ? {
-              ...c,
-              status: 'in_use',
-              currentRequestId: requestId,
-              assignedToName: targetReq.employeeName,
-              assignedToCode: targetReq.employeeCode,
-            }
-          : c
-      )
+    nextCards = nextCards.map((c) =>
+      c.code === actualCardCode
+        ? {
+            ...c,
+            status: 'in_use' as const,
+            currentRequestId: requestId,
+            assignedToName: targetReq.employeeName,
+            assignedToCode: targetReq.employeeCode,
+          }
+        : c
     );
+    setCards(nextCards);
+
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      actualCardCode: actualCardCode,
+      handedOverBy: operatorName,
+      handedOverAt: new Date().toISOString(),
+      status: 'holding_card',
+    };
 
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          actualCardCode: actualCardCode,
-          handedOverBy: operatorName,
-          handedOverAt: new Date().toISOString(),
-          status: 'holding_card',
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq, nextCards);
 
     // Thông báo cho nhân viên biết đã nhận thẻ thành công
     notifyEmployeeOrderProgress(
@@ -1588,18 +1628,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       autoAssignCardIfWaitlisted(targetReq.reservedCardCode, requestId);
     }
 
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      status: 'card_released',
+      releasedReason: reason.trim(),
+      releasedBy: operatorName,
+      releasedAt: new Date().toISOString(),
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          status: 'card_released',
-          releasedReason: reason.trim(),
-          releasedBy: operatorName,
-          releasedAt: new Date().toISOString(),
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq, cardsRef.current);
 
     return {
       success: true,
@@ -1615,18 +1655,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Chỉ có thể xin nhường thẻ khi đơn đang chờ bàn giao thẻ.' };
     }
 
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      yieldStatus: 'pending_user_confirm',
+      yieldReason: reason?.trim() || 'Có ca công tác khẩn cấp cần thẻ gấp',
+      yieldRequestedAt: new Date().toISOString(),
+      yieldRequestedBy: operatorName || currentUser.name,
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId) return req;
-        return {
-          ...req,
-          yieldStatus: 'pending_user_confirm',
-          yieldReason: reason?.trim() || 'Có ca công tác khẩn cấp cần thẻ gấp',
-          yieldRequestedAt: new Date().toISOString(),
-          yieldRequestedBy: operatorName || currentUser.name,
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq);
 
     return {
       success: true,
@@ -1644,35 +1684,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         autoAssignCardIfWaitlisted(targetReq.reservedCardCode, requestId);
       }
 
+      const updatedReq: TaxiRequest = {
+        ...targetReq,
+        status: 'cancelled',
+        yieldStatus: 'accepted',
+        yieldRespondedAt: new Date().toISOString(),
+        cancelledAt: new Date().toISOString(),
+        cancelledReason: `Đã đồng ý nhường thẻ cho ca khẩn: ${targetReq.yieldReason || ''}`,
+      };
+
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            status: 'cancelled',
-            yieldStatus: 'accepted',
-            yieldRespondedAt: new Date().toISOString(),
-            cancelledAt: new Date().toISOString(),
-            cancelledReason: `Đã đồng ý nhường thẻ cho ca khẩn: ${req.yieldReason || ''}`,
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      syncToSupabase(updatedReq, cardsRef.current);
 
       return {
         success: true,
         message: 'Bạn đã xác nhận nhường thẻ thành công. Thẻ đã được giải phóng về kho cho ca khẩn.',
       };
     } else {
+      const updatedReq: TaxiRequest = {
+        ...targetReq,
+        yieldStatus: 'declined',
+        yieldRespondedAt: new Date().toISOString(),
+      };
+
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-          return {
-            ...req,
-            yieldStatus: 'declined',
-            yieldRespondedAt: new Date().toISOString(),
-          };
-        })
+        prev.map((req) => (req.id === requestId ? updatedReq : req))
       );
+      syncToSupabase(updatedReq);
 
       return {
         success: true,
@@ -1698,27 +1738,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
     const cardCode = targetReq.actualCardCode || targetReq.reservedCardCode;
+    let nextCards = cardsRef.current;
 
     // Update physical card status & Auto-assign to waitlist if good
     if (cardCode) {
       if (params.cardCondition === 'good') {
         autoAssignCardIfWaitlisted(cardCode, params.requestId);
+        nextCards = cardsRef.current;
       } else {
-        setCards((prev) =>
-          prev.map((c) =>
-            c.code === cardCode
-              ? {
-                  ...c,
-                  status: 'damaged',
-                  condition: params.cardCondition,
-                  currentRequestId: undefined,
-                  assignedToName: undefined,
-                  assignedToCode: undefined,
-                  lastReturnedAt: new Date().toISOString(),
-                }
-              : c
-          )
+        nextCards = cardsRef.current.map((c) =>
+          c.code === cardCode
+            ? {
+                ...c,
+                status: 'damaged' as const,
+                condition: params.cardCondition,
+                currentRequestId: undefined,
+                assignedToName: undefined,
+                assignedToCode: undefined,
+                lastReturnedAt: new Date().toISOString(),
+              }
+            : c
         );
+        setCards(nextCards);
+        cardsRef.current = nextCards;
       }
     }
 
@@ -1735,33 +1777,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nextStatus = 'overbudget_pending_hr';
     }
 
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      cardReturned: true,
+      cardReturnedAt: new Date().toISOString(),
+      cardReturnedCondition: params.cardCondition,
+      returnedByOperator: params.operatorName,
+      status: nextStatus,
+      tripDetails: {
+        pickupPoint: params.pickupPoint.trim(),
+        dropoffPoint: params.dropoffPoint.trim(),
+        actualCost: cost,
+        isCostMissing: isMissing,
+        receiptNumber: params.receiptNumber?.trim(),
+        receiptPhotoUrl: params.receiptPhotoUrl,
+        ocrSuggested: params.ocrSuggested,
+        tripDate: new Date().toISOString().split('T')[0],
+        maxSpendSnapshot: maxSpend,
+        isOverBudget: isOver,
+        overBudgetAmount: overAmt,
+        hrOverBudgetDecision: isOver ? 'pending' : undefined,
+      },
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== params.requestId) return req;
-        return {
-          ...req,
-          cardReturned: true,
-          cardReturnedAt: new Date().toISOString(),
-          cardReturnedCondition: params.cardCondition,
-          returnedByOperator: params.operatorName,
-          status: nextStatus,
-          tripDetails: {
-            pickupPoint: params.pickupPoint.trim(),
-            dropoffPoint: params.dropoffPoint.trim(),
-            actualCost: cost,
-            isCostMissing: isMissing,
-            receiptNumber: params.receiptNumber?.trim(),
-            receiptPhotoUrl: params.receiptPhotoUrl,
-            ocrSuggested: params.ocrSuggested,
-            tripDate: new Date().toISOString().split('T')[0],
-            maxSpendSnapshot: maxSpend,
-            isOverBudget: isOver,
-            overBudgetAmount: overAmt,
-            hrOverBudgetDecision: isOver ? 'pending' : undefined,
-          },
-        };
-      })
+      prev.map((req) => (req.id === params.requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq, nextCards);
 
     // Thông báo cho nhân viên biết chuyến đi đã hoàn tất và đã thu hồi thẻ
     const costDisplay = isMissing ? 'Đang chờ đối soát' : `${Number(cost).toLocaleString('vi-VN')} VNĐ`;
@@ -1806,22 +1848,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Không tìm thấy dữ liệu chuyến đi.' };
     }
 
+    const updatedReq: TaxiRequest = {
+      ...targetReq,
+      status: 'completed', // Rule: Reject does NOT delete the bill or actual cost, stays in actual figures with reject status
+      tripDetails: {
+        ...targetReq.tripDetails,
+        hrOverBudgetDecision: decision,
+        hrDecisionBy: hrName,
+        hrDecisionReason: reason.trim(),
+        hrDecisionAt: new Date().toISOString(),
+      },
+    };
+
     setRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== requestId || !req.tripDetails) return req;
-        return {
-          ...req,
-          status: 'completed', // Rule: Reject does NOT delete the bill or actual cost, stays in actual figures with reject status
-          tripDetails: {
-            ...req.tripDetails,
-            hrOverBudgetDecision: decision,
-            hrDecisionBy: hrName,
-            hrDecisionReason: reason.trim(),
-            hrDecisionAt: new Date().toISOString(),
-          },
-        };
-      })
+      prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
+    syncToSupabase(updatedReq);
 
     return {
       success: true,
@@ -1845,7 +1887,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: note?.trim(),
     };
 
-    setCards((prev) => [...prev, newCard]);
+    const nextCards = [...cards, newCard];
+    setCards(nextCards);
+    cardsRef.current = nextCards;
+    supabaseService.upsertCards([newCard]).catch(() => {});
     return { success: true, message: `Đã thêm thẻ ${formatted} vào kho.` };
   };
 
@@ -1858,17 +1903,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    setCards((prev) =>
-      prev.map((c) => {
-        if (c.id !== cardId) return c;
-        return {
-          ...c,
-          status,
-          condition: status === 'damaged' ? 'broken' : c.condition,
-          note: note !== undefined ? note : c.note,
-        };
-      })
-    );
+    const nextCards = cards.map((c) => {
+      if (c.id !== cardId) return c;
+      return {
+        ...c,
+        status,
+        condition: status === 'damaged' ? 'broken' : c.condition,
+        note: note !== undefined ? note : c.note,
+      };
+    });
+    setCards(nextCards);
+    cardsRef.current = nextCards;
+    const targetCard = nextCards.find((c) => c.id === cardId);
+    if (targetCard) supabaseService.upsertCards([targetCard]).catch(() => {});
   };
 
   const editCard = (

@@ -40,6 +40,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
     request.tripDetails?.receiptPhotoUrl || ''
   );
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const maxSpend = config.maxSpendPerTrip;
   const costNum = isCostMissing ? 0 : parseInt(actualCostStr.replace(/\D/g, ''), 10) || 0;
@@ -59,6 +60,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError(null);
 
     if (!isCostMissing && (!actualCostStr || costNum <= 0)) {
@@ -70,24 +72,31 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
       return;
     }
 
-    const res = confirmReturnAndBilling({
-      requestId: request.id,
-      cardCondition,
-      pickupPoint,
-      dropoffPoint,
-      actualCost: isCostMissing ? null : costNum,
-      isCostMissing,
-      receiptNumber,
-      receiptPhotoUrl,
-      ocrSuggested: false,
-      operatorName: currentUser.name,
-    });
+    setIsSubmitting(true);
+    try {
+      const res = confirmReturnAndBilling({
+        requestId: request.id,
+        cardCondition,
+        pickupPoint,
+        dropoffPoint,
+        actualCost: isCostMissing ? null : costNum,
+        isCostMissing,
+        receiptNumber,
+        receiptPhotoUrl,
+        ocrSuggested: false,
+        operatorName: currentUser.name,
+      });
 
-    if (res.success) {
-      onSuccess();
-      onClose();
-    } else {
-      setError(res.message);
+      if (res.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setError(res.message);
+        setIsSubmitting(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Có lỗi xảy ra khi lưu dữ liệu');
+      setIsSubmitting(false);
     }
   };
 
@@ -364,16 +373,18 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
           <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs"
+              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-300 font-semibold text-xs"
             >
               Hủy bỏ
             </button>
             <button
               type="submit"
-              className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors"
+              disabled={isSubmitting}
+              className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md transition-colors"
             >
-              Xác nhận thu hồi & Lưu
+              {isSubmitting ? 'Đang lưu dữ liệu...' : 'Xác nhận thu hồi & Lưu'}
             </button>
           </div>
         </form>

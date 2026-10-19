@@ -216,6 +216,9 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ ok: true });
       }
 
+      // Phản hồi Telegram tức thì để tắt loading spinner trên nút và khóa click lặp lại
+      answerCallbackQuery(cb.id, '⏳ Đang xử lý...').catch(() => {});
+
       if (data.startsWith('approve_user_')) {
         let grantedRole = 'employee';
         let isLeader = false;

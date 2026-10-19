@@ -64,6 +64,7 @@ export const AdminActionQueueView: React.FC = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [handoverCardCode, setHandoverCardCode] = useState<{ [reqId: string]: string }>({});
   const [waitlistAssignCode, setWaitlistAssignCode] = useState<{ [reqId: string]: string }>({});
+  const [actionLoadingIds, setActionLoadingIds] = useState<{ [reqId: string]: boolean }>({});
 
   // HR Over-budget decision modal
   const [decidingOverBudgetReq, setDecidingOverBudgetReq] = useState<TaxiRequest | null>(null);
@@ -155,48 +156,88 @@ export const AdminActionQueueView: React.FC = () => {
   const totalCollectCount = billingQueue.length + overbudgetQueue.length;
   const totalTodoCount = totalDispatchCount + totalCollectCount;
 
-  // Actions
+  // Actions with anti-double-click locking
   const handleAdminApprove = (req: TaxiRequest) => {
+    if (actionLoadingIds[req.id]) return;
+    setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
     setFeedback(null);
-    const res = adminApprove(req.id);
-    setFeedback(res);
+    try {
+      const res = adminApprove(req.id);
+      setFeedback(res);
+    } finally {
+      setTimeout(() => {
+        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
+      }, 800);
+    }
   };
 
   const handleAdminForwardToLeader = (req: TaxiRequest) => {
+    if (actionLoadingIds[req.id]) return;
+    setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
     setFeedback(null);
-    const res = adminForwardToLeader(req.id);
-    setFeedback(res);
+    try {
+      const res = adminForwardToLeader(req.id);
+      setFeedback(res);
+    } finally {
+      setTimeout(() => {
+        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
+      }, 800);
+    }
   };
 
   const handleAdminReject = (req: TaxiRequest) => {
+    if (actionLoadingIds[req.id]) return;
     if (!rejectReason.trim()) {
       setFeedback({ success: false, message: 'Vui lòng nhập lý do từ chối yêu cầu.' });
       return;
     }
-    const res = adminReject(req.id, rejectReason);
-    setFeedback(res);
-    setRejectingReq(null);
-    setRejectReason('');
+    setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
+    try {
+      const res = adminReject(req.id, rejectReason);
+      setFeedback(res);
+      setRejectingReq(null);
+      setRejectReason('');
+    } finally {
+      setTimeout(() => {
+        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
+      }, 800);
+    }
   };
 
   const handleAssignFromWaitlist = (req: TaxiRequest) => {
+    if (actionLoadingIds[req.id]) return;
     const cardCode = waitlistAssignCode[req.id] || availableCards[0]?.code;
     if (!cardCode) {
       setFeedback({ success: false, message: 'Hiện không có thẻ nào sẵn sàng trong kho để cấp.' });
       return;
     }
-    const res = assignCardFromWaitlist(req.id, cardCode);
-    setFeedback(res);
+    setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
+    try {
+      const res = assignCardFromWaitlist(req.id, cardCode);
+      setFeedback(res);
+    } finally {
+      setTimeout(() => {
+        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
+      }, 800);
+    }
   };
 
   const handleConfirmHandover = (req: TaxiRequest) => {
+    if (actionLoadingIds[req.id]) return;
     const cardCode = handoverCardCode[req.id] || req.reservedCardCode || availableCards[0]?.code;
     if (!cardCode) {
       setFeedback({ success: false, message: 'Vui lòng chọn mã thẻ vật lý thực tế để bàn giao.' });
       return;
     }
-    const res = confirmHandover(req.id, cardCode, currentUser.name);
-    setFeedback(res);
+    setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
+    try {
+      const res = confirmHandover(req.id, cardCode, currentUser.name);
+      setFeedback(res);
+    } finally {
+      setTimeout(() => {
+        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
+      }, 800);
+    }
   };
 
   const handleHrDecisionSubmit = (e: React.FormEvent) => {
@@ -270,8 +311,12 @@ export const AdminActionQueueView: React.FC = () => {
             <button onClick={() => setRejectingReq(null)} className="px-2 py-1 text-slate-500 text-xs">
               Hủy
             </button>
-            <button onClick={() => handleAdminReject(req)} className="px-2.5 py-1 bg-rose-600 text-white font-bold text-xs">
-              Xác nhận từ chối
+            <button
+              disabled={actionLoadingIds[req.id]}
+              onClick={() => handleAdminReject(req)}
+              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs"
+            >
+              {actionLoadingIds[req.id] ? 'Đang xử lý...' : 'Xác nhận từ chối'}
             </button>
           </div>
         </div>
@@ -289,19 +334,21 @@ export const AdminActionQueueView: React.FC = () => {
               Từ chối
             </button>
             <button
+              disabled={actionLoadingIds[req.id]}
               onClick={() => handleAdminForwardToLeader(req)}
-              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 text-xs font-semibold flex items-center gap-1"
+              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 text-xs font-semibold flex items-center gap-1"
               title="Chuyển đơn tới Leader phê duyệt trước khi cấp thẻ"
             >
               <Send className="w-3 h-3 text-amber-600" />
-              <span>Y/c Leader</span>
+              <span>{actionLoadingIds[req.id] ? 'Đang chuyển...' : 'Y/c Leader'}</span>
             </button>
             <button
+              disabled={actionLoadingIds[req.id]}
               onClick={() => handleAdminApprove(req)}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-opacity"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Duyệt</span>
+              <span>{actionLoadingIds[req.id] ? 'Đang duyệt...' : 'Duyệt'}</span>
             </button>
           </div>
         </div>
@@ -391,11 +438,11 @@ export const AdminActionQueueView: React.FC = () => {
         </div>
 
         <button
-          disabled={availableCards.length === 0}
+          disabled={availableCards.length === 0 || actionLoadingIds[req.id]}
           onClick={() => handleAssignFromWaitlist(req)}
-          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs"
+          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs"
         >
-          Cấp thẻ ngay
+          {actionLoadingIds[req.id] ? 'Đang cấp...' : 'Cấp thẻ ngay'}
         </button>
       </div>
     </div>
@@ -526,11 +573,12 @@ export const AdminActionQueueView: React.FC = () => {
             </button>
 
             <button
+              disabled={actionLoadingIds[req.id]}
               onClick={() => handleConfirmHandover(req)}
-              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
+              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1 shadow-xs transition-opacity"
             >
               <CreditCard className="w-3.5 h-3.5" />
-              <span>Giao thẻ</span>
+              <span>{actionLoadingIds[req.id] ? 'Đang giao...' : 'Giao thẻ'}</span>
             </button>
           </div>
         </div>
