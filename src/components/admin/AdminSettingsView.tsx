@@ -14,7 +14,11 @@ import {
   HelpCircle,
 } from 'lucide-react';
 
-export const AdminSettingsView: React.FC = () => {
+interface AdminSettingsViewProps {
+  onOpenUserManagement?: () => void;
+}
+
+export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUserManagement }) => {
   const { config, updateConfig, users, leaderMappings, cards, updateUserProfile } = useApp();
 
   const [maxSpendInput, setMaxSpendInput] = useState<string>(String(config.maxSpendPerTrip));
@@ -201,6 +205,17 @@ export const AdminSettingsView: React.FC = () => {
           </div>
           <span className="text-[10px] text-slate-400">Chọn vai trò để cấp quyền trực tiếp</span>
         </div>
+
+        {onOpenUserManagement && (
+          <button
+            type="button"
+            onClick={onOpenUserManagement}
+            className="w-full py-2 px-3 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded flex items-center justify-center gap-2 transition-colors"
+          >
+            <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span>Mở trang Quản lý nhân sự, Tìm kiếm & Sửa Leader chi tiết ➔</span>
+          </button>
+        )}
 
         <div className="space-y-2 text-xs">
           {users.map((u) => (

@@ -11,6 +11,7 @@ import { AdminSettingsView } from './components/admin/AdminSettingsView';
 import { AdminWebPortalStandbyView } from './components/admin/AdminWebPortalStandbyView';
 import { UserOnboardingView } from './components/auth/UserOnboardingView';
 import { AdminUserApprovalModal } from './components/admin/AdminUserApprovalModal';
+import { AdminUserManagementView } from './components/admin/AdminUserManagementView';
 import {
   FilePlus,
   ListFilter,
@@ -41,7 +42,7 @@ const MainAppContent: React.FC = () => {
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<string>('register');
-  const [subView, setSubView] = useState<'settings' | 'web_portal' | null>(null);
+  const [subView, setSubView] = useState<'settings' | 'web_portal' | 'user_management' | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
 
   const isAdminOrHR =
@@ -91,6 +92,7 @@ const MainAppContent: React.FC = () => {
             onOpenSettings={() => setSubView('settings')}
             onOpenWebPortal={() => setSubView('web_portal')}
             onOpenUserApprovals={() => setShowApprovalModal(true)}
+            onOpenUserManagement={() => setSubView('user_management')}
             pendingUsersCount={pendingUsersCount}
           />
 
@@ -118,11 +120,15 @@ const MainAppContent: React.FC = () => {
                   Xong / Đóng
                 </button>
               </div>
-              <AdminSettingsView />
+              <AdminSettingsView onOpenUserManagement={() => setSubView('user_management')} />
             </div>
           ) : subView === 'web_portal' ? (
             <div className="flex-1 overflow-y-auto pb-16">
               <AdminWebPortalStandbyView onBackToMiniApp={() => setSubView(null)} />
+            </div>
+          ) : subView === 'user_management' ? (
+            <div className="flex-1 overflow-y-auto pb-16">
+              <AdminUserManagementView onBack={() => setSubView(null)} />
             </div>
           ) : (
             /* Main Role Content Views */

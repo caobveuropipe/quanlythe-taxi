@@ -153,11 +153,21 @@ export default async function handler(req: any, res: any) {
       const data = cb.data || '';
       const adminFromId = String(cb.from?.id);
 
-      // Chỉ Super Admin mới có quyền duyệt trên nút này
-      if (adminFromId !== SUPER_ADMIN_ID) {
+      // Kiểm tra quyền: Super Admin hoặc bất kỳ ai có role admin_hr / admin
+      const { data: adminUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('telegram_id', adminFromId)
+        .in('role', ['admin_hr', 'admin'])
+        .maybeSingle();
+
+      const isAuthorizedAdmin = adminFromId === SUPER_ADMIN_ID || Boolean(adminUser);
+      if (!isAuthorizedAdmin) {
         await answerCallbackQuery(cb.id, '⛔ Bạn không có quyền quản trị viên!');
         return res.status(200).json({ ok: true });
       }
+
+      const approverName = adminUser?.name || (cb.from?.first_name ? `${cb.from.first_name} ${cb.from.last_name || ''}`.trim() : 'Super Admin');
 
       if (data.startsWith('approve_user_')) {
         let grantedRole = 'employee';
@@ -179,6 +189,19 @@ export default async function handler(req: any, res: any) {
         const { data: targetUser } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
 
         if (targetUser) {
+          // Kiểm tra xem đã có ai duyệt trước chưa để tránh trùng lặp
+          if (targetUser.role !== 'pending' && targetUser.role !== 'unregistered') {
+            await answerCallbackQuery(cb.id, `⚠️ Hồ sơ này đã được xử lý trước đó với vai trò: ${targetUser.role}!`);
+            if (cb.message) {
+              await editMessageText(
+                cb.message.chat.id,
+                cb.message.message_id,
+                `ℹ️ <b>HỒ SƠ ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Thành viên: <b>${targetUser.name}</b> (<code>${targetUser.code}</code>)\n• Trạng thái hiện tại: <b>${targetUser.role}</b>`
+              );
+            }
+            return res.status(200).json({ ok: true });
+          }
+
           await supabase.from('users').update({ role: grantedRole, is_leader: isLeader }).eq('id', userId);
           const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : 'Nhân sự';
           await answerCallbackQuery(cb.id, `✅ Đã phê duyệt ${targetUser.name} với vai trò ${roleLabel}!`);
@@ -187,15 +210,38 @@ export default async function handler(req: any, res: any) {
             await editMessageText(
               cb.message.chat.id,
               cb.message.message_id,
-              `✅ <b>ĐÃ PHÊ DUYỆT THÀNH VIÊN THÀNH CÔNG!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>Admin Van Cao</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
+              `✅ <b>ĐÃ PHÊ DUYỆT THÀNH VIÊN THÀNH CÔNG!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
             );
+          }
+
+          // Thông báo cho tất cả các Admin/HR còn lại biết Admin này đã duyệt
+          try {
+            const { data: otherAdmins } = await supabase
+              .from('users')
+              .select('telegram_id, name')
+              .in('role', ['admin_hr', 'admin'])
+              .not('telegram_id', 'is', null);
+
+            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
+            allAdminIds.delete(adminFromId);
+
+            for (const otherAdminId of Array.from(allAdminIds)) {
+              if (otherAdminId && otherAdminId.trim()) {
+                await sendTelegramMessage(
+                  otherAdminId,
+                  `ℹ️ <b>THÔNG BÁO DUYỆT THÀNH VIÊN</b>\n\n• Nhân sự: <b>${targetUser.name}</b> (Mã: <code>${targetUser.code}</code>)\n• Đã được duyệt bởi Admin: <b>${approverName}</b>\n• Vai trò được cấp: <b>${roleLabel}</b>`
+                ).catch(() => {});
+              }
+            }
+          } catch (e) {
+            console.warn('Error broadcasting approval to other admins:', e);
           }
 
           // Gửi thông báo trực tiếp cho nhân viên vừa được duyệt nếu có telegram_id
           if (targetUser.telegram_id) {
             await sendTelegramMessage(
               targetUser.telegram_id,
-              `🎉 <b>Chúc mừng bạn ${targetUser.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> với vai trò: <b>${roleLabel}</b>.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
+              `🎉 <b>Chúc mừng bạn ${targetUser.name}!</b>\n\nTài khoản của bạn đã được Admin <b>${approverName}</b> phê duyệt với vai trò: <b>${roleLabel}</b>.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
               {
                 inline_keyboard: [
                   [
@@ -216,6 +262,11 @@ export default async function handler(req: any, res: any) {
         const { data: targetUser } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
 
         if (targetUser) {
+          if (targetUser.role !== 'pending' && targetUser.role !== 'unregistered') {
+            await answerCallbackQuery(cb.id, `⚠️ Hồ sơ này đã được xử lý trước đó!`);
+            return res.status(200).json({ ok: true });
+          }
+
           await supabase.from('users').update({ role: 'rejected' }).eq('id', userId);
           await answerCallbackQuery(cb.id, `❌ Đã từ chối nhân sự ${targetUser.name}!`);
 
@@ -223,14 +274,37 @@ export default async function handler(req: any, res: any) {
             await editMessageText(
               cb.message.chat.id,
               cb.message.message_id,
-              `❌ <b>ĐÃ TỪ CHỐI THÀNH VIÊN!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>Admin Van Cao</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`
+              `❌ <b>ĐÃ TỪ CHỐI THÀNH VIÊN!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`
             );
+          }
+
+          // Thông báo cho các Admin/HR còn lại biết
+          try {
+            const { data: otherAdmins } = await supabase
+              .from('users')
+              .select('telegram_id, name')
+              .in('role', ['admin_hr', 'admin'])
+              .not('telegram_id', 'is', null);
+
+            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
+            allAdminIds.delete(adminFromId);
+
+            for (const otherAdminId of Array.from(allAdminIds)) {
+              if (otherAdminId && otherAdminId.trim()) {
+                await sendTelegramMessage(
+                  otherAdminId,
+                  `ℹ️ <b>THÔNG BÁO TỪ CHỐI THÀNH VIÊN</b>\n\n• Nhân sự: <b>${targetUser.name}</b> (Mã: <code>${targetUser.code}</code>)\n• Đã bị từ chối bởi Admin: <b>${approverName}</b>.`
+                ).catch(() => {});
+              }
+            }
+          } catch (e) {
+            console.warn('Error broadcasting rejection to other admins:', e);
           }
 
           if (targetUser.telegram_id) {
             await sendTelegramMessage(
               targetUser.telegram_id,
-              `⚠️ Yêu cầu đăng ký tài khoản TaxiCard của bạn đã bị từ chối bởi Admin.\nVui lòng liên hệ bộ phận Hành chính Nhân sự nếu có thắc mắc.`
+              `⚠️ Yêu cầu đăng ký tài khoản TaxiCard của bạn đã bị từ chối bởi Admin <b>${approverName}</b>.\nVui lòng liên hệ ban quản trị nếu có thắc mắc.`
             );
           }
         } else {

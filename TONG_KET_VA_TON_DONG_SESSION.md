@@ -42,6 +42,10 @@ Trong suốt phiên làm việc, hệ thống đã trải qua các đợt rà so
 | **20** | *"tóm tắt lại toàn bộ session này xem còn idea nào chưa được fix trên code"* | Tổng kết session | ✅ Đã rà soát toàn diện và lập báo cáo tài liệu này |
 | **21** | *"giao diện người dùng trên điện thoại vẫn đang quá nhiều thông tin, quá nhiều chữ, chưa được tối giản lắm, cho anh thêm 1 giao diện tối giản hơn, có bong bóng chuyển đổi để anh test"* | Giao diện Tối giản Mobile | ✅ Đã tạo Giao diện Tối giản (Minimalist Mode) & Bong bóng chuyển đổi trực tiếp trên màn hình |
 | **22** | *"Khi gửi yêu cầu thì cần tóm tắt lại thông tin đặc biệt ngày giờ đi để người dùng xác nhận 1 lần hoặc quay lại để sửa"* | Xác nhận trước khi gửi | ✅ Đã tạo Modal/Bottom Sheet tóm tắt thông tin, làm nổi bật Ngày & Giờ đi tiếng Việt và 2 nút "Quay lại để sửa" / "Xác nhận gửi" |
+| **23** | *"hồ sơ mới không nhập được thông tin, bấm nút nhập lại thông tin khác không hoạt động..."* | Sửa Onboarding | ✅ Đã cho phép sửa trực tiếp form Onboarding và đồng bộ Supabase |
+| **24** | *"Người dùng đã điền tên leader rồi nhưng thông báo của super admin lại bảo là không có, cũng không có chỗ nào cho super admin hoặc admin cấp role..."* | Liên kết Leader & Phân quyền | ✅ Đã tự tạo bản ghi Leader trong `users` và cho phép chọn quyền trực tiếp khi duyệt |
+| **25** | *"chỉ có 1 super admin duy nhất nhận được tin nhắn này à? tự động gửi cho tất cả admin_hr, khi 1 admin_hr duyệt thì sẽ thông báo cho những người còn lại là admin đó đã duyệt..."* | Thông báo Đa Admin | ✅ Đã phát tin nhắn cho tất cả tài khoản `admin_hr` và `admin`, kèm thông báo đồng bộ khi 1 admin duyệt |
+| **26** | *"Thêm nữa là cần 1 giao diện trên miniapp để quản lý người dùng: tìm kiếm, sửa vai trò, sửa leader"* | Quản lý người dùng MiniApp | ✅ Đã xây dựng [AdminUserManagementView.tsx](file:///d:/Project_VCC/Quan%20ly%20the%20taxi/src/components/admin/AdminUserManagementView.tsx) đầy đủ tính năng tìm kiếm tức thì, lọc vai trò, sửa tên, mã, phòng ban, đổi role và sửa Leader quản lý |
 
 ---
 

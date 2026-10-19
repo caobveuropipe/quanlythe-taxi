@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserProfileModal } from './UserProfileModal';
-import { X, MoreVertical, User, Settings, Globe, Shield, UserCheck } from 'lucide-react';
+import { X, MoreVertical, User, Settings, Globe, Shield, UserCheck, Users } from 'lucide-react';
 
 interface TelegramHeaderProps {
   onOpenSettings?: () => void;
   onOpenWebPortal?: () => void;
   onOpenUserApprovals?: () => void;
+  onOpenUserManagement?: () => void;
   pendingUsersCount?: number;
 }
 
@@ -14,6 +15,7 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
   onOpenSettings,
   onOpenWebPortal,
   onOpenUserApprovals,
+  onOpenUserManagement,
   pendingUsersCount = 0,
 }) => {
   const { currentUser, config } = useApp();
@@ -106,6 +108,19 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
                         {pendingUsersCount}
                       </span>
                     )}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onOpenUserManagement?.();
+                    }}
+                    className="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Quản lý & Phân quyền</span>
+                    </div>
                   </button>
 
                   <button

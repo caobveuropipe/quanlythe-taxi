@@ -1451,31 +1451,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     await supabaseService.upsertUser(newUser);
 
-    // Notify Super Admin on Telegram with inline approval buttons
-    const adminId = '5139629652';
+    // Notify all Admins / HR on Telegram with inline approval buttons
     const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+    const adminRecipients = users
+      .filter((u) => (u.role === 'admin_hr' || u.role === 'admin') && u.telegramId)
+      .map((u) => u.telegramId);
+
+    const recipientSet = new Set(['5139629652', ...adminRecipients]);
+
     try {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: adminId,
-          text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
-                { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
+      for (const adminId of Array.from(recipientSet)) {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: adminId,
+            text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
+                  { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
+                ],
+                [
+                  { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
+                  { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                ],
               ],
-              [
-                { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
-                { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-              ],
-            ],
-          },
-        }),
-      });
+            },
+          }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.warn('Telegram notify admin error:', err);
     }
