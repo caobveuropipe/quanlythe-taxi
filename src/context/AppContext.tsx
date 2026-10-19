@@ -378,6 +378,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setConfig((prev) => ({ ...prev, ...newConfig }));
   };
 
+  // Helper: Đồng bộ sửa tin nhắn Telegram và xóa nút khi đơn đã xử lý
+  const syncEditTelegramMessages = async (trackId: string, text: string) => {
+    try {
+      const { data: meta } = await supabase
+        .from('users')
+        .select('telegram_username')
+        .eq('id', trackId)
+        .maybeSingle();
+
+      if (meta?.telegram_username) {
+        const tracked: Array<{ chatId: string | number; messageId: number }> = JSON.parse(meta.telegram_username);
+        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+        await Promise.all(
+          tracked.map((m) =>
+            fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: m.chatId,
+                message_id: m.messageId,
+                text,
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: [] },
+              }),
+            }).catch(() => {})
+          )
+        );
+        await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('syncEditTelegramMessages error:', e);
+    }
+  };
+
   // Helper: Find department leader
   const getLeaderForUser = (user: UserProfile) => {
     const mapping = leaderMappings.find((m) => m.department === user.department);
@@ -467,21 +501,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     try {
-      // Gửi thông báo có nút duyệt cho tất cả Admin/HR (Chỉ thông báo cho Leader khi Admin yêu cầu duyệt)
-      for (const adminId of Array.from(recipientSet)) {
-        if (adminId && adminId.trim()) {
-          fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: adminId,
-              text: orderText,
-              parse_mode: 'HTML',
-              reply_markup: orderReplyMarkup,
-            }),
-          }).catch((err) => console.warn('Notify admin order error for:', adminId, err));
+      const trackedMessages: Array<{ chatId: string | number; messageId: number }> = [];
+      (async () => {
+        for (const adminId of Array.from(recipientSet)) {
+          if (adminId && adminId.trim()) {
+            try {
+              const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: adminId,
+                  text: orderText,
+                  parse_mode: 'HTML',
+                  reply_markup: orderReplyMarkup,
+                }),
+              });
+              const json = await res.json();
+              if (json.ok && json.result?.message_id) {
+                trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
+              }
+            } catch (err) {
+              console.warn('Notify admin order error for:', adminId, err);
+            }
+          }
         }
-      }
+
+        if (trackedMessages.length > 0) {
+          await supabase.from('users').upsert({
+            id: `msg_track_req_${newReqId}`,
+            name: 'Tracker',
+            code: 'MSG_META',
+            department: 'system',
+            role: 'system',
+            telegram_username: JSON.stringify(trackedMessages),
+          });
+        }
+      })();
     } catch (err) {
       console.warn('Telegram notify order error:', err);
     }
@@ -886,6 +941,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       );
 
+      syncEditTelegramMessages(
+        `msg_track_req_${requestId}`,
+        `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
+      );
+
       return {
         success: true,
         message: `Admin đã duyệt! Đã giữ thẻ dự kiến ${availableCard.code} cho yêu cầu này.`,
@@ -908,6 +968,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       );
 
+      syncEditTelegramMessages(
+        `msg_track_req_${requestId}`,
+        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</font>`
+      );
+
       return {
         success: true,
         message: 'Admin đã duyệt, nhưng kho hiện hết thẻ sẵn sàng. Yêu cầu đã đưa vào danh sách chờ thẻ.',
@@ -921,6 +986,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Vui lòng nhập lý do từ chối yêu cầu.' };
     }
 
+    const target = requests.find((r) => r.id === requestId);
+
     setRequests((prev) =>
       prev.map((req) => {
         if (req.id !== requestId) return req;
@@ -933,6 +1000,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'rejected_admin',
         };
       })
+    );
+
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target?.employeeName || ''}</b>\n• Người từ chối: <b>${currentUser.name} (qua Mini App)</b>\n• Lý do: <i>${reason.trim()}</i>`
     );
 
     return { success: true, message: 'Đã từ chối yêu cầu.' };
@@ -963,6 +1035,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((req) => (req.id === requestId ? updatedReq : req))
     );
     syncToSupabase(updatedReq);
+
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Leader phụ trách: <b>${resolvedLeaderName || 'Leader'}</b>\n• Người chuyển: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#f59e0b">Chờ Leader phê duyệt</font>`
+    );
 
     // Gửi thông báo trực tiếp cho Leader qua Telegram kèm nút Duyệt / Từ chối
     if (resolvedLeaderTelegramId) {
@@ -1550,29 +1627,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const recipientSet = new Set(['5139629652', ...adminRecipients]);
 
     try {
-      for (const adminId of Array.from(recipientSet)) {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: adminId,
-            text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
-                  { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
-                ],
-                [
-                  { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
-                  { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-                ],
-              ],
-            },
-          }),
-        }).catch(() => {});
-      }
+      const trackedMessages: Array<{ chatId: string | number; messageId: number }> = [];
+      (async () => {
+        for (const adminId of Array.from(recipientSet)) {
+          if (adminId && adminId.trim()) {
+            try {
+              const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: adminId,
+                  text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
+                  parse_mode: 'HTML',
+                  reply_markup: {
+                    inline_keyboard: [
+                      [
+                        { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
+                        { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
+                      ],
+                      [
+                        { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
+                        { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                      ],
+                    ],
+                  },
+                }),
+              });
+              const json = await res.json();
+              if (json.ok && json.result?.message_id) {
+                trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
+              }
+            } catch (e) {
+              console.warn('Telegram notify admin error:', e);
+            }
+          }
+        }
+
+        if (trackedMessages.length > 0) {
+          await supabase.from('users').upsert({
+            id: `msg_track_user_${targetId}`,
+            name: 'Tracker',
+            code: 'MSG_META',
+            department: 'system',
+            role: 'system',
+            telegram_username: JSON.stringify(trackedMessages),
+          });
+        }
+      })();
     } catch (err) {
       console.warn('Telegram notify admin error:', err);
     }
@@ -1650,9 +1751,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabaseService.upsertUser(createdLeader).catch(() => {});
     }
 
+    const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : grantedRole === 'admin' ? 'Quản trị viên (Admin)' : grantedRole === 'admin_hr' ? 'Admin kiêm HR' : grantedRole === 'hr' ? 'HR Vận hành' : 'Nhân sự';
+
+    // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
+    syncEditTelegramMessages(
+      `msg_track_user_${userId}`,
+      `✅ <b>ĐÃ ĐƯỢC PHÊ DUYỆT BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Bộ phận: <b>${candidate.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
+    );
+
     // Notify approved employee on Telegram
     if (candidate.telegramId) {
-      const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : grantedRole === 'admin' ? 'Quản trị viên (Admin)' : grantedRole === 'admin_hr' ? 'Admin kiêm HR' : grantedRole === 'hr' ? 'HR Vận hành' : 'Nhân sự';
       try {
         fetch(`https://api.telegram.org/bot8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24/sendMessage`, {
           method: 'POST',
@@ -1685,22 +1793,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
     }
 
-    const updated: UserProfile = {
+    const updatedCandidate: UserProfile = {
       ...candidate,
       role: 'rejected',
     };
 
-    setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedCandidate : u)));
+    supabaseService.upsertUser(updatedCandidate).catch(() => {});
+
+    // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
+    syncEditTelegramMessages(
+      `msg_track_user_${userId}`,
+      `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${currentUser.name}!</b>\n\n• Họ và tên: <b>${candidate.name}</b> (<code>${candidate.code}</code>)\n• Người xử lý: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`
+    );
+
     if (currentUser.id === userId) {
-      setCurrentUser(updated);
+      setCurrentUser(updatedCandidate);
     }
 
-    supabaseService.upsertUser(updated).catch(() => {});
-
-    return {
-      success: true,
-      message: `Đã từ chối cấp phép cho nhân sự ${candidate.name}.`,
-    };
+    return { success: true, message: 'Đã từ chối cấp quyền cho nhân sự này.' };
   };
 
   const updateUserProfile = async (

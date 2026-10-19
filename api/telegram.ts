@@ -62,6 +62,51 @@ async function editMessageText(chatId: string | number, messageId: number, text:
   }
 }
 
+async function editAllTrackedMessages(
+  trackId: string,
+  currentChatId?: string | number,
+  currentMessageId?: number,
+  text: string = ''
+) {
+  let tracked: Array<{ chatId: string | number; messageId: number }> = [];
+  try {
+    const { data: meta } = await supabase
+      .from('users')
+      .select('telegram_username')
+      .eq('id', trackId)
+      .maybeSingle();
+
+    if (meta?.telegram_username) {
+      tracked = JSON.parse(meta.telegram_username);
+    }
+  } catch (e) {
+    console.warn('Error reading message tracker for:', trackId, e);
+  }
+
+  // Đảm bảo tin nhắn hiện tại đang click luôn nằm trong danh sách
+  if (
+    currentChatId &&
+    currentMessageId &&
+    !tracked.some(
+      (m) => String(m.chatId) === String(currentChatId) && Number(m.messageId) === Number(currentMessageId)
+    )
+  ) {
+    tracked.push({ chatId: currentChatId, messageId: currentMessageId });
+  }
+
+  // Sửa trực tiếp toàn bộ tin nhắn gốc của TẤT CẢ các Admin và GỠ BỎ TOÀN BỘ NÚT BẤM (inline_keyboard: [])
+  if (tracked.length > 0) {
+    await Promise.all(
+      tracked.map((m) =>
+        editMessageText(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => {})
+      )
+    );
+  }
+
+  // Dọn dẹp bản ghi tracker khỏi Supabase
+  await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'active', bot: 'ADM_thetaxi_bot' });
@@ -194,13 +239,12 @@ export default async function handler(req: any, res: any) {
           // Kiểm tra xem đã có ai duyệt trước chưa để tránh trùng lặp
           if (targetUser.role !== 'pending' && targetUser.role !== 'unregistered') {
             await answerCallbackQuery(cb.id, `⚠️ Hồ sơ này đã được xử lý trước đó với vai trò: ${targetUser.role}!`);
-            if (cb.message) {
-              await editMessageText(
-                cb.message.chat.id,
-                cb.message.message_id,
-                `ℹ️ <b>HỒ SƠ ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Thành viên: <b>${targetUser.name}</b> (<code>${targetUser.code}</code>)\n• Trạng thái hiện tại: <b>${targetUser.role}</b>`
-              );
-            }
+            await editAllTrackedMessages(
+              `msg_track_user_${userId}`,
+              cb.message?.chat?.id,
+              cb.message?.message_id,
+              `ℹ️ <b>HỒ SƠ ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Thành viên: <b>${targetUser.name}</b> (<code>${targetUser.code}</code>)\n• Trạng thái hiện tại: <b>${targetUser.role}</b>`
+            );
             return res.status(200).json({ ok: true });
           }
 
@@ -208,36 +252,15 @@ export default async function handler(req: any, res: any) {
           const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : 'Nhân sự';
           await answerCallbackQuery(cb.id, `✅ Đã phê duyệt ${targetUser.name} với vai trò ${roleLabel}!`);
 
-          if (cb.message) {
-            await editMessageText(
-              cb.message.chat.id,
-              cb.message.message_id,
-              `✅ <b>ĐÃ PHÊ DUYỆT THÀNH VIÊN THÀNH CÔNG!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
-            );
-          }
+          // Sửa trực tiếp toàn bộ tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (Không sinh thêm tin nhắn thừa)
+          const approvedMsgText = `✅ <b>ĐÃ ĐƯỢC DUYỆT BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`;
 
-          // Thông báo cho tất cả các Admin/HR còn lại biết Admin này đã duyệt
-          try {
-            const { data: otherAdmins } = await supabase
-              .from('users')
-              .select('telegram_id, name')
-              .in('role', ['admin_hr', 'admin'])
-              .not('telegram_id', 'is', null);
-
-            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
-            allAdminIds.delete(adminFromId);
-
-            for (const otherAdminId of Array.from(allAdminIds)) {
-              if (otherAdminId && otherAdminId.trim()) {
-                await sendTelegramMessage(
-                  otherAdminId,
-                  `ℹ️ <b>THÔNG BÁO DUYỆT THÀNH VIÊN</b>\n\n• Nhân sự: <b>${targetUser.name}</b> (Mã: <code>${targetUser.code}</code>)\n• Đã được duyệt bởi Admin: <b>${approverName}</b>\n• Vai trò được cấp: <b>${roleLabel}</b>`
-                ).catch(() => {});
-              }
-            }
-          } catch (e) {
-            console.warn('Error broadcasting approval to other admins:', e);
-          }
+          await editAllTrackedMessages(
+            `msg_track_user_${userId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            approvedMsgText
+          );
 
           // Gửi thông báo trực tiếp cho nhân viên vừa được duyệt nếu có telegram_id
           if (targetUser.telegram_id) {
@@ -266,42 +289,27 @@ export default async function handler(req: any, res: any) {
         if (targetUser) {
           if (targetUser.role !== 'pending' && targetUser.role !== 'unregistered') {
             await answerCallbackQuery(cb.id, `⚠️ Hồ sơ này đã được xử lý trước đó!`);
+            await editAllTrackedMessages(
+              `msg_track_user_${userId}`,
+              cb.message?.chat?.id,
+              cb.message?.message_id,
+              `ℹ️ <b>HỒ SƠ ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Thành viên: <b>${targetUser.name}</b> (<code>${targetUser.code}</code>)`
+            );
             return res.status(200).json({ ok: true });
           }
 
           await supabase.from('users').update({ role: 'rejected' }).eq('id', userId);
           await answerCallbackQuery(cb.id, `❌ Đã từ chối nhân sự ${targetUser.name}!`);
 
-          if (cb.message) {
-            await editMessageText(
-              cb.message.chat.id,
-              cb.message.message_id,
-              `❌ <b>ĐÃ TỪ CHỐI THÀNH VIÊN!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`
-            );
-          }
+          // Sửa trực tiếp toàn bộ tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
+          const rejectedMsgText = `❌ <b>ĐÃ BỊ TỪ CHỐI BỞI ${approverName}!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp quyền</font>`;
 
-          // Thông báo cho các Admin/HR còn lại biết
-          try {
-            const { data: otherAdmins } = await supabase
-              .from('users')
-              .select('telegram_id, name')
-              .in('role', ['admin_hr', 'admin'])
-              .not('telegram_id', 'is', null);
-
-            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
-            allAdminIds.delete(adminFromId);
-
-            for (const otherAdminId of Array.from(allAdminIds)) {
-              if (otherAdminId && otherAdminId.trim()) {
-                await sendTelegramMessage(
-                  otherAdminId,
-                  `ℹ️ <b>THÔNG BÁO TỪ CHỐI THÀNH VIÊN</b>\n\n• Nhân sự: <b>${targetUser.name}</b> (Mã: <code>${targetUser.code}</code>)\n• Đã bị từ chối bởi Admin: <b>${approverName}</b>.`
-                ).catch(() => {});
-              }
-            }
-          } catch (e) {
-            console.warn('Error broadcasting rejection to other admins:', e);
-          }
+          await editAllTrackedMessages(
+            `msg_track_user_${userId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            rejectedMsgText
+          );
 
           if (targetUser.telegram_id) {
             await sendTelegramMessage(
@@ -314,7 +322,7 @@ export default async function handler(req: any, res: any) {
         }
       } else if (data.startsWith('approve_req_')) {
         const reqId = data.replace('approve_req_', '');
-        const { data: targetReq } = await supabase.from('requests').select('*').eq('id', reqId).maybeSingle();
+        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
         if (!targetReq) {
           await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu mượn thẻ!');
@@ -324,13 +332,12 @@ export default async function handler(req: any, res: any) {
         // Kiểm tra xem yêu cầu đã được xử lý chưa (không còn pending_admin / pending_leader)
         if (targetReq.status !== 'pending_admin' && targetReq.status !== 'pending_leader') {
           await answerCallbackQuery(cb.id, `⚠️ Yêu cầu ${reqId} đã được xử lý trước đó với trạng thái: ${targetReq.status}!`);
-          if (cb.message) {
-            await editMessageText(
-              cb.message.chat.id,
-              cb.message.message_id,
-              `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Trạng thái hiện tại: <b>${targetReq.status}</b>\n• Người xử lý: <b>${targetReq.admin_approver_name || 'Admin'}</b>`
-            );
-          }
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Trạng thái hiện tại: <b>${targetReq.status}</b>\n• Người xử lý: <b>${targetReq.admin_approver_name || 'Admin'}</b>`
+          );
           return res.status(200).json({ ok: true });
         }
 
@@ -338,7 +345,7 @@ export default async function handler(req: any, res: any) {
 
         // Tìm thẻ đang available trong kho
         const { data: availableCards } = await supabase
-          .from('cards')
+          .from('taxi_cards')
           .select('*')
           .eq('status', 'available')
           .order('code', { ascending: true })
@@ -348,7 +355,7 @@ export default async function handler(req: any, res: any) {
 
         if (availableCard) {
           // 1. Cập nhật thẻ sang reserved
-          await supabase.from('cards').update({
+          await supabase.from('taxi_cards').update({
             status: 'reserved',
             current_request_id: reqId,
             assigned_to_name: targetReq.employee_name,
@@ -356,7 +363,7 @@ export default async function handler(req: any, res: any) {
           }).eq('id', availableCard.id);
 
           // 2. Cập nhật yêu cầu sang pending_handover
-          await supabase.from('requests').update({
+          await supabase.from('taxi_requests').update({
             admin_approval_status: 'approved',
             admin_approval_comment: 'Admin đã duyệt cấp thẻ qua Telegram Bot',
             admin_approved_at: now,
@@ -369,38 +376,15 @@ export default async function handler(req: any, res: any) {
 
           await answerCallbackQuery(cb.id, `✅ Đã duyệt cấp thẻ ${availableCard.code} cho ${targetReq.employee_name}!`);
 
-          if (cb.message) {
-            await editMessageText(
-              cb.message.chat.id,
-              cb.message.message_id,
-              `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
-            );
-          }
+          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (Không sinh thêm tin nhắn thừa)
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Chờ bàn giao thẻ tại quầy</font>`
+          );
 
-          // 3. Thông báo cho các Admin/HR còn lại biết
-          try {
-            const { data: otherAdmins } = await supabase
-              .from('users')
-              .select('telegram_id, name')
-              .in('role', ['admin_hr', 'admin'])
-              .not('telegram_id', 'is', null);
-
-            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
-            allAdminIds.delete(adminFromId);
-
-            for (const otherAdminId of Array.from(allAdminIds)) {
-              if (otherAdminId && otherAdminId.trim()) {
-                await sendTelegramMessage(
-                  otherAdminId,
-                  `ℹ️ <b>THÔNG BÁO DUYỆT CẤP THẺ TAXI</b>\n\n• Mã yêu cầu: <code>${reqId}</code> (Nhân sự: <b>${targetReq.employee_name}</b>)\n• Đã được duyệt bởi Admin: <b>${approverName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Trạng thái: <i>Chờ bàn giao thẻ tại quầy</i>`
-                ).catch(() => {});
-              }
-            }
-          } catch (e) {
-            console.warn('Error broadcasting req approval to other admins:', e);
-          }
-
-          // 4. Thông báo cho nhân viên mượn thẻ nếu có telegram_id
+          // Thông báo cho nhân viên mượn thẻ nếu có telegram_id
           const { data: empUser } = await supabase
             .from('users')
             .select('telegram_id')
@@ -416,7 +400,7 @@ export default async function handler(req: any, res: any) {
           }
         } else {
           // Hết thẻ sẵn sàng trong kho -> Xếp Waitlist
-          await supabase.from('requests').update({
+          await supabase.from('taxi_requests').update({
             admin_approval_status: 'approved',
             admin_approval_comment: 'Admin đã duyệt (chờ thẻ vào kho)',
             admin_approved_at: now,
@@ -427,36 +411,13 @@ export default async function handler(req: any, res: any) {
 
           await answerCallbackQuery(cb.id, `⏳ Kho hết thẻ trống! Đơn ${reqId} đã được đưa vào danh sách chờ thẻ.`);
 
-          if (cb.message) {
-            await editMessageText(
-              cb.message.chat.id,
-              cb.message.message_id,
-              `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</font>`
-            );
-          }
-
-          // Broadcast cho các Admin khác
-          try {
-            const { data: otherAdmins } = await supabase
-              .from('users')
-              .select('telegram_id, name')
-              .in('role', ['admin_hr', 'admin'])
-              .not('telegram_id', 'is', null);
-
-            const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
-            allAdminIds.delete(adminFromId);
-
-            for (const otherAdminId of Array.from(allAdminIds)) {
-              if (otherAdminId && otherAdminId.trim()) {
-                await sendTelegramMessage(
-                  otherAdminId,
-                  `ℹ️ <b>THÔNG BÁO DUYỆT ĐƠN (CHỜ THẺ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code> (Nhân sự: <b>${targetReq.employee_name}</b>)\n• Đã được duyệt bởi Admin: <b>${approverName}</b>\n• Trạng thái: <i>Kho hết thẻ - Đang xếp hàng chờ cấp bù</i>`
-                ).catch(() => {});
-              }
-            }
-          } catch (e) {
-            console.warn('Error broadcasting waitlist to other admins:', e);
-          }
+          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</font>`
+          );
 
           // Thông báo cho nhân viên
           const { data: empUser } = await supabase
@@ -475,7 +436,7 @@ export default async function handler(req: any, res: any) {
         }
       } else if (data.startsWith('reject_req_')) {
         const reqId = data.replace('reject_req_', '');
-        const { data: targetReq } = await supabase.from('requests').select('*').eq('id', reqId).maybeSingle();
+        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
         if (!targetReq) {
           await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu mượn thẻ!');
@@ -484,11 +445,17 @@ export default async function handler(req: any, res: any) {
 
         if (targetReq.status !== 'pending_admin' && targetReq.status !== 'pending_leader') {
           await answerCallbackQuery(cb.id, `⚠️ Yêu cầu này đã được xử lý trước đó!`);
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái: <b>${targetReq.status}</b>`
+          );
           return res.status(200).json({ ok: true });
         }
 
         const now = new Date().toISOString();
-        await supabase.from('requests').update({
+        await supabase.from('taxi_requests').update({
           admin_approval_status: 'rejected',
           admin_approval_comment: 'Từ chối nhanh qua Telegram Bot',
           admin_approved_at: now,
@@ -498,36 +465,13 @@ export default async function handler(req: any, res: any) {
 
         await answerCallbackQuery(cb.id, `❌ Đã từ chối yêu cầu ${reqId} của ${targetReq.employee_name}!`);
 
-        if (cb.message) {
-          await editMessageText(
-            cb.message.chat.id,
-            cb.message.message_id,
-            `❌ <b>ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp thẻ</font>`
-          );
-        }
-
-        // Broadcast to other admins
-        try {
-          const { data: otherAdmins } = await supabase
-            .from('users')
-            .select('telegram_id, name')
-            .in('role', ['admin_hr', 'admin'])
-            .not('telegram_id', 'is', null);
-
-          const allAdminIds = new Set([SUPER_ADMIN_ID, ...(otherAdmins || []).map((a) => String(a.telegram_id))]);
-          allAdminIds.delete(adminFromId);
-
-          for (const otherAdminId of Array.from(allAdminIds)) {
-            if (otherAdminId && otherAdminId.trim()) {
-              await sendTelegramMessage(
-                otherAdminId,
-                `ℹ️ <b>THÔNG BÁO TỪ CHỐI YÊU CẦU TAXI</b>\n\n• Mã yêu cầu: <code>${reqId}</code> (Nhân sự: <b>${targetReq.employee_name}</b>)\n• Đã bị từ chối bởi Admin: <b>${approverName}</b>.`
-              ).catch(() => {});
-            }
-          }
-        } catch (e) {
-          console.warn('Error broadcasting req rejection to other admins:', e);
-        }
+        // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (Không sinh thêm tin nhắn thừa)
+        await editAllTrackedMessages(
+          `msg_track_req_${reqId}`,
+          cb.message?.chat?.id,
+          cb.message?.message_id,
+          `❌ <b>ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người xử lý: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Từ chối cấp thẻ</font>`
+        );
 
         // Thông báo cho nhân viên
         const { data: empUser } = await supabase
@@ -545,7 +489,7 @@ export default async function handler(req: any, res: any) {
         }
       } else if (data.startsWith('forward_leader_')) {
         const reqId = data.replace('forward_leader_', '');
-        const { data: targetReq } = await supabase.from('requests').select('*').eq('id', reqId).maybeSingle();
+        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
         if (!targetReq) {
           await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu mượn thẻ!');
@@ -554,6 +498,12 @@ export default async function handler(req: any, res: any) {
 
         if (targetReq.status !== 'pending_admin' && targetReq.status !== 'pending_leader') {
           await answerCallbackQuery(cb.id, `⚠️ Yêu cầu đã được xử lý trước đó với trạng thái: ${targetReq.status}!`);
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái: <b>${targetReq.status}</b>`
+          );
           return res.status(200).json({ ok: true });
         }
 
@@ -573,7 +523,7 @@ export default async function handler(req: any, res: any) {
           }
         }
 
-        await supabase.from('requests').update({
+        await supabase.from('taxi_requests').update({
           leader_approval_required: true,
           leader_approval_status: 'pending',
           status: 'pending_leader',
@@ -583,13 +533,13 @@ export default async function handler(req: any, res: any) {
 
         await answerCallbackQuery(cb.id, `📋 Đã chuyển yêu cầu cho Leader ${leaderName || 'bộ phận'} phê duyệt!`);
 
-        if (cb.message) {
-          await editMessageText(
-            cb.message.chat.id,
-            cb.message.message_id,
-            `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Leader phụ trách: <b>${leaderName || 'Leader'}</b>\n• Người chuyển: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ Leader phê duyệt</font>`
-          );
-        }
+        // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
+        await editAllTrackedMessages(
+          `msg_track_req_${reqId}`,
+          cb.message?.chat?.id,
+          cb.message?.message_id,
+          `📋 <b>ĐÃ CHUYỂN YÊU CẦU CHO LEADER DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Leader phụ trách: <b>${leaderName || 'Leader'}</b>\n• Người chuyển: <b>${approverName}</b>\n• Trạng thái: <font color="#f59e0b">Chờ Leader phê duyệt</font>`
+        );
 
         // Gửi thông báo đến Leader kèm nút Duyệt / Từ chối
         if (leaderTelegramId) {
@@ -617,7 +567,7 @@ export default async function handler(req: any, res: any) {
         }
       } else if (data.startsWith('leader_approve_')) {
         const reqId = data.replace('leader_approve_', '');
-        const { data: targetReq } = await supabase.from('requests').select('*').eq('id', reqId).maybeSingle();
+        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
         if (!targetReq) {
           await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu!');
@@ -638,11 +588,19 @@ export default async function handler(req: any, res: any) {
 
         if (targetReq.status !== 'pending_leader') {
           await answerCallbackQuery(cb.id, `⚠️ Yêu cầu này đã được xử lý trước đó với trạng thái: ${targetReq.status}!`);
+          if (cb.message) {
+            await editMessageText(
+              cb.message.chat.id,
+              cb.message.message_id,
+              `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái: <b>${targetReq.status}</b>`,
+              { inline_keyboard: [] }
+            );
+          }
           return res.status(200).json({ ok: true });
         }
 
         const now = new Date().toISOString();
-        await supabase.from('requests').update({
+        await supabase.from('taxi_requests').update({
           leader_approval_status: 'approved',
           leader_approval_comment: 'Leader đã đồng ý qua Telegram Bot',
           leader_approved_at: now,
@@ -655,7 +613,8 @@ export default async function handler(req: any, res: any) {
           await editMessageText(
             cb.message.chat.id,
             cb.message.message_id,
-            `✅ <b>BẠN ĐÃ ĐỒNG Ý YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã chuyển sang Admin để thẩm định cấp thẻ</font>`
+            `✅ <b>BẠN ĐÃ ĐỒNG Ý YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <font color="#10b981">Đã chuyển sang Admin để thẩm định cấp thẻ</font>`,
+            { inline_keyboard: [] }
           );
         }
 
@@ -668,9 +627,11 @@ export default async function handler(req: any, res: any) {
             .not('telegram_id', 'is', null);
 
           const allAdminIds = new Set([SUPER_ADMIN_ID, ...(adminList || []).map((a) => String(a.telegram_id))]);
+          const adminTrackedMsgs: Array<{ chatId: string | number; messageId: number }> = [];
+
           for (const aId of Array.from(allAdminIds)) {
             if (aId && aId.trim()) {
-              await sendTelegramMessage(
+              const sent = await sendTelegramMessage(
                 aId,
                 `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN TAXI!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Leader: <b>${approverName}</b> đã phê duyệt.\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ ngay bên dưới:</i>`,
                 {
@@ -684,15 +645,32 @@ export default async function handler(req: any, res: any) {
                     ],
                   ],
                 }
-              ).catch(() => {});
+              ).catch(() => null);
+
+              if (sent?.result?.message_id) {
+                adminTrackedMsgs.push({ chatId: aId, messageId: sent.result.message_id });
+              }
             }
+          }
+
+          // Lưu tracking tin nhắn gửi cho các Admin để khi 1 Admin duyệt, tất cả tin nhắn này đều được sửa và xóa nút
+          if (adminTrackedMsgs.length > 0) {
+            await supabase.from('users').upsert({
+              id: `msg_track_req_${reqId}`,
+              name: 'Tracker',
+              code: 'MSG_META',
+              department: 'system',
+              role: 'system',
+              telegram_username: JSON.stringify(adminTrackedMsgs),
+              updated_at: new Date().toISOString(),
+            }).catch(() => {});
           }
         } catch (e) {
           console.warn('Error notifying admins after leader approved:', e);
         }
       } else if (data.startsWith('leader_reject_')) {
         const reqId = data.replace('leader_reject_', '');
-        const { data: targetReq } = await supabase.from('requests').select('*').eq('id', reqId).maybeSingle();
+        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
         if (!targetReq) {
           await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu!');
@@ -712,11 +690,19 @@ export default async function handler(req: any, res: any) {
 
         if (targetReq.status !== 'pending_leader') {
           await answerCallbackQuery(cb.id, `⚠️ Yêu cầu này đã được xử lý trước đó!`);
+          if (cb.message) {
+            await editMessageText(
+              cb.message.chat.id,
+              cb.message.message_id,
+              `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái: <b>${targetReq.status}</b>`,
+              { inline_keyboard: [] }
+            );
+          }
           return res.status(200).json({ ok: true });
         }
 
         const now = new Date().toISOString();
-        await supabase.from('requests').update({
+        await supabase.from('taxi_requests').update({
           leader_approval_status: 'rejected',
           leader_approval_comment: 'Leader từ chối qua Telegram Bot',
           leader_approved_at: now,
@@ -729,7 +715,8 @@ export default async function handler(req: any, res: any) {
           await editMessageText(
             cb.message.chat.id,
             cb.message.message_id,
-            `❌ <b>BẠN ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người từ chối: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Đã từ chối</font>`
+            `❌ <b>BẠN ĐÃ TỪ CHỐI YÊU CẦU MƯỢN THẺ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Nhân sự: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người từ chối: <b>${approverName}</b>\n• Trạng thái: <font color="#ef4444">Đã từ chối</font>`,
+            { inline_keyboard: [] }
           );
         }
 

@@ -255,9 +255,10 @@ export const supabaseService = {
       const { data, error } = await supabase
         .from('users')
         .select('*')
+        .neq('role', 'system')
         .order('name', { ascending: true });
       if (error || !data) return null;
-      return data.map(fromDbUser);
+      return data.filter((u) => u.role !== 'system' && !u.id.startsWith('msg_track_')).map(fromDbUser);
     } catch {
       return null;
     }

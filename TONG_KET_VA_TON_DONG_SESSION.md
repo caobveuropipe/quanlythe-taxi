@@ -149,7 +149,22 @@ Dưới đây là 4 ý tưởng quan trọng đã phát sinh trong các cuộc t
 
 ---
 
-## V. ĐỀ XUẤT LỘ TRÌNH TRIỂN KHAI TIẾP THEO
+## V. CẬP NHẬT MỚI: GIẢI PHÁP ĐỒNG BỘ TIN NHẮN TELEGRAM & CHỐNG TRÀN TIN (ĐÃ HOÀN THÀNH)
+
+- **Vấn đề phát sinh từ người dùng:** Khi hệ thống gửi thông báo duyệt thành viên mới hoặc đơn mượn thẻ tới nhiều Admin/HR qua Telegram:
+  - Các tin nhắn xuất hiện riêng lẻ trong chat của từng Admin, đều có các nút bấm `[Duyệt]`, `[Từ chối]`.
+  - Khi 1 Admin đã xử lý, tin nhắn của các Admin khác vẫn còn nguyên nút bấm, không biết đơn nào đã duyệt, dẫn đến tình trạng loạn tin nhắn và bấm trùng lặp.
+- **Giải pháp kỹ thuật đã triển khai:**
+  1. **Message Tracking metadata**: Lưu trữ danh sách `{ chatId, messageId }` của tất cả Admin nhận tin vào Supabase (`msg_track_user_${id}` và `msg_track_req_${id}`).
+  2. **Đồng bộ thời gian thực & Gỡ nút bấm (`inline_keyboard: []`)**:
+     - Khi bất kỳ Admin nào bấm Duyệt/Từ chối trên **Telegram Bot** HOẶC trên **Mini App**: Hệ thống tự động gọi Telegram API `editMessageText` để cập nhật trực tiếp nội dung tin nhắn của **tất cả** các Admin khác kèm gỡ sạch toàn bộ nút bấm.
+     - Tin nhắn được cập nhật rõ: người đã duyệt, thời gian, trạng thái kết quả.
+  3. **Loại bỏ tin nhắn spam thừa**: Không gửi thêm các tin nhắn broadcast ("Admin A vừa duyệt...") làm tràn màn hình chat của Admin.
+  4. **Chống bấm trùng lặp**: Nếu Admin bấm vào tin nhắn cũ đã xử lý, hệ thống trả lời pop-up cảnh báo và tự động gỡ sạch nút trên tin nhắn đó.
+
+---
+
+## VI. ĐỀ XUẤT LỘ TRÌNH TRIỂN KHAI TIẾP THEO
 
 | Thứ tự | Hạng mục công việc đề xuất | Mức độ ưu tiên | Tệp tin dự kiến thay đổi |
 | :---: | :--- | :---: | :--- |
@@ -157,3 +172,4 @@ Dưới đây là 4 ý tưởng quan trọng đã phát sinh trong các cuộc t
 | **Ưu tiên 2** | **Thêm Ngày/Giờ đi dự kiến vào form đăng ký & thuật toán ưu tiên cấp thẻ** | ⭐⭐⭐ Rất cao | `types/index.ts`, `EmployeeRegisterView.tsx`, `AppContext.tsx` |
 | **Ưu tiên 3** | **Hiển thị Badge cảnh báo thời gian chờ nhận thẻ trên thẻ Admin (Timeline alert)** | ⭐⭐ Cao | `AdminActionQueueView.tsx` |
 | **Ưu tiên 4** | **Bổ sung hàm logic Hoàn tác Leader (Undo) vào AppContext** | ⭐⭐ Trung bình | `AppContext.tsx`, `LeaderApprovalsView.tsx` |
+
