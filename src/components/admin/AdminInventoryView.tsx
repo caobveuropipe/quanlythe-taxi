@@ -416,11 +416,11 @@ export const AdminInventoryView: React.FC = () => {
                     {card.status === 'reserved' && (
                       <button
                         onClick={() => setReleasingCard(card)}
-                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-700 font-semibold text-[11px] transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700 font-bold text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer active:scale-98"
                         title="Giải phóng thẻ này về kho (Hủy lượt giữ)"
                       >
-                        <RotateCcw className="w-3 h-3 text-blue-600" />
-                        <span>Nhả về kho</span>
+                        <RotateCcw className="w-3 h-3 text-amber-600" />
+                        <span>Nhả thẻ</span>
                       </button>
                     )}
 
@@ -617,7 +617,7 @@ export const AdminInventoryView: React.FC = () => {
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as CardStatus)}
-                    disabled={editingCard.status === 'in_use' || editingCard.status === 'reserved'}
+                    disabled={editingCard.status === 'in_use'}
                     className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                   >
                     <option value="available">Sẵn sàng (Kho)</option>

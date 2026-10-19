@@ -2011,15 +2011,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    const isReleasing = data.status === 'available' && (card.status === 'reserved' || card.status === 'in_use');
+
     const updatedCard: TaxiCard = {
       ...card,
       code: data.code ? data.code.trim().toUpperCase() : card.code,
       note: data.note !== undefined ? data.note.trim() : card.note,
       condition: data.condition !== undefined ? data.condition : card.condition,
       status: data.status !== undefined ? data.status : card.status,
+      currentRequestId: isReleasing ? undefined : card.currentRequestId,
+      assignedToName: isReleasing ? undefined : card.assignedToName,
+      assignedToCode: isReleasing ? undefined : card.assignedToCode,
     };
 
     setCards((prev) => prev.map((c) => (c.id === cardId ? updatedCard : c)));
+    cardsRef.current = cardsRef.current.map((c) => (c.id === cardId ? updatedCard : c));
     supabaseService.upsertCards([updatedCard]).catch(() => {});
 
     return { success: true, message: `Đã cập nhật thông tin thẻ ${updatedCard.code} thành công!` };
