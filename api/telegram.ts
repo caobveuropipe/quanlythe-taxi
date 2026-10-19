@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8690278410:AAHt4QIoK7WlXRfXsPo1b6J-5IYHXD0L2uY';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const SUPER_ADMIN_ID = '5139629652';
 const WEBAPP_URL = 'https://quanly-thetaxi.vercel.app';
@@ -64,7 +64,7 @@ async function editMessageText(chatId: string | number, messageId: number, text:
 
 export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
-    return res.status(200).json({ status: 'active', bot: 'troly_no3_bot' });
+    return res.status(200).json({ status: 'active', bot: 'ADM_thetaxi_bot' });
   }
 
   if (req.method !== 'POST') {

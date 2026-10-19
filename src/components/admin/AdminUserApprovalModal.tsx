@@ -97,7 +97,7 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
 
               const leaderMissing = !existingLeader && Boolean(candidate.leaderName);
               const generatedLeaderCode = `LD-${Math.floor(100 + Math.random() * 900)}`;
-              const deepLink = `https://t.me/troly_no3_bot?start=lead_${candidate.code}`;
+              const deepLink = `https://t.me/ADM_thetaxi_bot?start=lead_${candidate.code}`;
 
               return (
                 <div

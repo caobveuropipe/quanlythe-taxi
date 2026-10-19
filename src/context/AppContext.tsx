@@ -1405,7 +1405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Notify Super Admin on Telegram with inline approval buttons
     const adminId = '5139629652';
-    const botToken = '8690278410:AAHt4QIoK7WlXRfXsPo1b6J-5IYHXD0L2uY';
+    const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
     try {
       fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
@@ -1500,7 +1500,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Notify approved employee on Telegram
     if (candidate.telegramId) {
       try {
-        fetch(`https://api.telegram.org/bot8690278410:AAHt4QIoK7WlXRfXsPo1b6J-5IYHXD0L2uY/sendMessage`, {
+        fetch(`https://api.telegram.org/bot8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
