@@ -1417,7 +1417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const adminId = '5139629652';
     const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
     try {
-      fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1427,8 +1427,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           reply_markup: {
             inline_keyboard: [
               [
-                { text: '✅ Duyệt cấp phép', callback_data: `approve_user_${newUserId}` },
-                { text: '❌ Từ chối', callback_data: `reject_user_${newUserId}` },
+                { text: '✅ Duyệt cấp phép', callback_data: `approve_user_${targetId}` },
+                { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
               ],
               [
                 { text: '🔍 Mở Mini App để xem', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
@@ -1436,8 +1436,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ],
           },
         }),
-      }).catch(() => {});
-    } catch {}
+      });
+    } catch (err) {
+      console.warn('Telegram notify admin error:', err);
+    }
 
     return {
       success: true,
