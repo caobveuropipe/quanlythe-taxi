@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UserProfile } from '../../types';
+import { UserProfile, UserRole } from '../../types';
 import {
   UserCheck,
   UserX,
@@ -28,6 +28,7 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [roleSelections, setRoleSelections] = useState<{ [userId: string]: UserRole }>({});
 
   if (!isOpen) return null;
 
@@ -171,31 +172,55 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      onClick={() => {
-                        const res = rejectUser(candidate.id);
-                        setFeedback(res.message);
-                      }}
-                      className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded transition-colors inline-flex items-center gap-1"
-                    >
-                      <UserX className="w-3.5 h-3.5 text-rose-500" />
-                      <span>Từ chối</span>
-                    </button>
+                  {/* Actions & Role Selector */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="font-semibold text-slate-600 dark:text-slate-400">Cấp vai trò:</span>
+                      <select
+                        value={roleSelections[candidate.id] || 'employee'}
+                        onChange={(e) =>
+                          setRoleSelections((prev) => ({
+                            ...prev,
+                            [candidate.id]: e.target.value as UserRole,
+                          }))
+                        }
+                        className="p-1 px-2 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500"
+                      >
+                        <option value="employee">Nhân sự (Tạo yêu cầu mượn thẻ)</option>
+                        <option value="leader">Leader (Duyệt đơn phòng ban)</option>
+                        <option value="admin">Admin (Quản trị hệ thống)</option>
+                        <option value="hr">HR Vận hành (Điều phối thẻ)</option>
+                        <option value="admin_hr">Admin kiêm HR</option>
+                      </select>
+                    </div>
 
-                    <button
-                      onClick={() => {
-                        const res = approveUser(candidate.id, {
-                          createNewLeaderFromName: leaderMissing ? candidate.leaderName : undefined,
-                        });
-                        setFeedback(res.message);
-                      }}
-                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded transition-colors shadow-xs inline-flex items-center gap-1.5"
-                    >
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>Duyệt & Cấp quyền</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const res = rejectUser(candidate.id);
+                          setFeedback(res.message);
+                        }}
+                        className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded transition-colors inline-flex items-center gap-1"
+                      >
+                        <UserX className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Từ chối</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const selectedRole = roleSelections[candidate.id] || 'employee';
+                          const res = approveUser(candidate.id, {
+                            role: selectedRole,
+                            createNewLeaderFromName: leaderMissing ? candidate.leaderName : undefined,
+                          });
+                          setFeedback(res.message);
+                        }}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded transition-colors shadow-xs inline-flex items-center gap-1.5"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Duyệt cấp quyền</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

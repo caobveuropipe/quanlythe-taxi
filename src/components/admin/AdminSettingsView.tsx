@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { UserRole } from '../../types';
 import {
   ToggleLeft,
   ToggleRight,
@@ -14,10 +15,32 @@ import {
 } from 'lucide-react';
 
 export const AdminSettingsView: React.FC = () => {
-  const { config, updateConfig, users, leaderMappings, cards } = useApp();
+  const { config, updateConfig, users, leaderMappings, cards, updateUserProfile } = useApp();
 
   const [maxSpendInput, setMaxSpendInput] = useState<string>(String(config.maxSpendPerTrip));
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+
+  const handleRoleChange = async (userId: string, userName: string, newRole: UserRole) => {
+    const isLeader = newRole === 'leader' || newRole === 'admin_hr';
+    const res = await updateUserProfile(userId, { role: newRole, isLeader });
+    if (res.success) {
+      const roleLabel =
+        newRole === 'leader'
+          ? 'Leader duyệt đơn'
+          : newRole === 'admin'
+          ? 'Admin'
+          : newRole === 'admin_hr'
+          ? 'Admin kiêm HR'
+          : newRole === 'hr'
+          ? 'HR Vận hành'
+          : newRole === 'pending'
+          ? 'Chờ duyệt'
+          : newRole === 'rejected'
+          ? 'Chặn / Từ chối'
+          : 'Nhân sự';
+      setSaveFeedback(`Đã chuyển vai trò của ${userName} thành "${roleLabel}"!`);
+    }
+  };
 
   const handleToggleLeaderApproval = () => {
     const nextVal = !config.requireLeaderApproval;
@@ -170,32 +193,52 @@ export const AdminSettingsView: React.FC = () => {
       </div>
 
       {/* 4. Danh sách tài khoản & Phân quyền */}
-      <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
-        <div className="font-bold text-xs text-slate-900 dark:text-white">
-          Danh sách nhân sự & Phân quyền Mini App
+      <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5 text-blue-500" />
+            <span>Danh sách nhân sự & Phân quyền Mini App ({users.length})</span>
+          </div>
+          <span className="text-[10px] text-slate-400">Chọn vai trò để cấp quyền trực tiếp</span>
         </div>
 
-        <div className="space-y-1.5 text-xs">
+        <div className="space-y-2 text-xs">
           {users.map((u) => (
             <div
               key={u.id}
-              className="p-2 border border-slate-100 dark:border-slate-800 flex items-center justify-between"
+              className="p-2.5 border border-slate-200 dark:border-slate-800 rounded bg-slate-50/50 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
             >
               <div>
-                <span className="font-semibold text-slate-900 dark:text-slate-100">
-                  {u.name}
-                </span>
-                <span className="font-mono text-[10px] text-slate-400 ml-1.5">
-                  ({u.code}) · {u.department}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {u.name}
+                  </span>
+                  <span className="px-1.5 py-0.2 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[10px] font-bold rounded">
+                    {u.code || 'Chưa có mã'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Phòng ban: <strong className="text-slate-700 dark:text-slate-300">{u.department || '(Trống)'}</strong>
+                  {u.telegramUsername && <span className="ml-2 font-mono text-[10px]">({u.telegramUsername})</span>}
+                </div>
               </div>
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                {u.role === 'employee' && 'Nhân sự'}
-                {u.role === 'leader' && 'Leader duyệt'}
-                {u.role === 'admin' && 'Admin'}
-                {u.role === 'hr' && 'HR Vận hành'}
-                {u.role === 'admin_hr' && 'Admin kiêm HR'}
-              </span>
+
+              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                <span className="text-[10px] text-slate-400">Vai trò:</span>
+                <select
+                  value={u.role}
+                  onChange={(e) => handleRoleChange(u.id, u.name, e.target.value as UserRole)}
+                  className="p-1 px-2 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500"
+                >
+                  <option value="employee">Nhân sự (Mượn thẻ)</option>
+                  <option value="leader">Leader (Duyệt đơn)</option>
+                  <option value="admin">Admin (Quản trị)</option>
+                  <option value="hr">HR Vận hành</option>
+                  <option value="admin_hr">Admin kiêm HR</option>
+                  <option value="pending">Chờ duyệt (Pending)</option>
+                  <option value="rejected">Chặn / Từ chối</option>
+                </select>
+              </div>
             </div>
           ))}
         </div>

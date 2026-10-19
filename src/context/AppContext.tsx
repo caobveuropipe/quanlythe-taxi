@@ -100,7 +100,7 @@ interface AppContextType {
   }) => Promise<{ success: boolean; message: string }>;
   approveUser: (
     userId: string,
-    options?: { createNewLeaderFromName?: string }
+    options?: { createNewLeaderFromName?: string; role?: UserRole }
   ) => { success: boolean; message: string };
   rejectUser: (userId: string) => { success: boolean; message: string };
   updateUserProfile: (
@@ -243,7 +243,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
           if (cleaned.length > 0) {
-            setUsers(cleaned);
+            const resolved = cleaned.map((u) => {
+              if (u.leaderId && !u.leaderName) {
+                const lead = cleaned.find((l) => l.id === u.leaderId);
+                if (lead) return { ...u, leaderName: lead.name };
+              }
+              return u;
+            });
+            setUsers(resolved);
           } else {
             setUsers(INITIAL_USERS);
             for (const u of INITIAL_USERS) {
@@ -1392,12 +1399,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existingUser = (params.telegramId ? users.find((u) => u.telegramId === params.telegramId) : null) || existingByCode;
     const targetId = existingUser ? existingUser.id : (currentUser.id.startsWith('unregistered-') ? `user-${params.telegramId || Date.now()}` : currentUser.id);
 
+    const trimmedLeaderName = params.leaderName.trim();
+    let targetLeader = users.find(
+      (u) =>
+        (u.isLeader || u.role === 'leader' || u.role === 'admin_hr') &&
+        u.name.trim().toLowerCase() === trimmedLeaderName.toLowerCase()
+    );
+
+    let createdLeader: UserProfile | null = null;
+    if (!targetLeader && trimmedLeaderName) {
+      const newLeaderId = `lead-${Date.now()}`;
+      createdLeader = {
+        id: newLeaderId,
+        name: trimmedLeaderName,
+        code: `LD-${Math.floor(100 + Math.random() * 899)}`,
+        department: params.department.trim(),
+        telegramUsername: '',
+        telegramId: '',
+        role: 'leader',
+        isLeader: true,
+        botActive: false,
+      };
+      targetLeader = createdLeader;
+    }
+
     const newUser: UserProfile = {
       id: targetId,
       code: trimmedCode,
       name: params.name.trim(),
       department: params.department.trim(),
-      leaderName: params.leaderName.trim(),
+      leaderId: targetLeader?.id,
+      leaderName: trimmedLeaderName,
       telegramId: params.telegramId || '',
       telegramUsername: params.telegramUsername || '',
       role: 'pending',
@@ -1405,12 +1437,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setUsers((prev) => {
-      const filtered = prev.filter((u) => u.id !== targetId && (params.telegramId ? u.telegramId !== params.telegramId : true));
+      let filtered = prev.filter((u) => u.id !== targetId && (params.telegramId ? u.telegramId !== params.telegramId : true));
+      if (createdLeader) {
+        filtered = [createdLeader, ...filtered];
+      }
       return [newUser, ...filtered];
     });
     setCurrentUser(newUser);
 
     // Sync to Supabase
+    if (createdLeader) {
+      await supabaseService.upsertUser(createdLeader);
+    }
     await supabaseService.upsertUser(newUser);
 
     // Notify Super Admin on Telegram with inline approval buttons
@@ -1422,16 +1460,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: adminId,
-          text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt nhanh ngay tại đây hoặc mở Mini App:</i>`,
+          text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [
-                { text: '✅ Duyệt cấp phép', callback_data: `approve_user_${targetId}` },
-                { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
+                { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
+                { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
               ],
               [
-                { text: '🔍 Mở Mini App để xem', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
+                { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
               ],
             ],
           },
@@ -1449,7 +1488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const approveUser = (
     userId: string,
-    options?: { createNewLeaderFromName?: string }
+    options?: { createNewLeaderFromName?: string; role?: UserRole }
   ) => {
     const candidate = users.find((u) => u.id === userId);
     if (!candidate) {
@@ -1485,10 +1524,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    const grantedRole: UserRole = options?.role || 'employee';
+    const isLeaderRole = grantedRole === 'leader' || grantedRole === 'admin_hr' || Boolean(candidate.isLeader);
+
     const updatedCandidate: UserProfile = {
       ...candidate,
-      role: 'employee',
+      role: grantedRole,
+      isLeader: isLeaderRole,
       leaderId: targetLeaderId,
+      leaderName: candidate.leaderName || (targetLeaderId ? users.find((u) => u.id === targetLeaderId)?.name : undefined),
     };
 
     setUsers((prev) => {
@@ -1511,13 +1555,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Notify approved employee on Telegram
     if (candidate.telegramId) {
+      const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : grantedRole === 'admin' ? 'Quản trị viên (Admin)' : grantedRole === 'admin_hr' ? 'Admin kiêm HR' : grantedRole === 'hr' ? 'HR Vận hành' : 'Nhân sự';
       try {
         fetch(`https://api.telegram.org/bot8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: candidate.telegramId,
-            text: `🎉 <b>Chúc mừng bạn ${candidate.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> thành công.\nBây giờ bạn đã có thể tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
+            text: `🎉 <b>Chúc mừng bạn ${candidate.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> với vai trò: <b>${roleLabel}</b>.\nBây giờ bạn đã có thể tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [

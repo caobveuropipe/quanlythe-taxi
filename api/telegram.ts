@@ -160,18 +160,34 @@ export default async function handler(req: any, res: any) {
       }
 
       if (data.startsWith('approve_user_')) {
-        const userId = data.replace('approve_user_', '');
+        let grantedRole = 'employee';
+        let isLeader = false;
+        let userId = '';
+
+        if (data.startsWith('approve_user_leader_')) {
+          grantedRole = 'leader';
+          isLeader = true;
+          userId = data.replace('approve_user_leader_', '');
+        } else if (data.startsWith('approve_user_employee_')) {
+          grantedRole = 'employee';
+          isLeader = false;
+          userId = data.replace('approve_user_employee_', '');
+        } else {
+          userId = data.replace('approve_user_', '');
+        }
+
         const { data: targetUser } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
 
         if (targetUser) {
-          await supabase.from('users').update({ role: 'employee' }).eq('id', userId);
-          await answerCallbackQuery(cb.id, `✅ Đã phê duyệt nhân sự ${targetUser.name}!`);
+          await supabase.from('users').update({ role: grantedRole, is_leader: isLeader }).eq('id', userId);
+          const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : 'Nhân sự';
+          await answerCallbackQuery(cb.id, `✅ Đã phê duyệt ${targetUser.name} với vai trò ${roleLabel}!`);
 
           if (cb.message) {
             await editMessageText(
               cb.message.chat.id,
               cb.message.message_id,
-              `✅ <b>ĐÃ PHÊ DUYỆT THÀNH VIÊN THÀNH CÔNG!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Người duyệt: <b>Admin Van Cao</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền mượn thẻ</font>`
+              `✅ <b>ĐÃ PHÊ DUYỆT THÀNH VIÊN THÀNH CÔNG!</b>\n\n• Họ và tên: <b>${targetUser.name}</b>\n• Mã nhân sự: <code>${targetUser.code}</code>\n• Bộ phận: <b>${targetUser.department}</b>\n• Vai trò cấp: <b>${roleLabel}</b>\n• Người duyệt: <b>Admin Van Cao</b>\n• Trạng thái: <font color="#10b981">Đã cấp quyền hệ thống</font>`
             );
           }
 
@@ -179,7 +195,7 @@ export default async function handler(req: any, res: any) {
           if (targetUser.telegram_id) {
             await sendTelegramMessage(
               targetUser.telegram_id,
-              `🎉 <b>Chúc mừng bạn ${targetUser.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> thành công.\nBây giờ bạn đã có quyền tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
+              `🎉 <b>Chúc mừng bạn ${targetUser.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> với vai trò: <b>${roleLabel}</b>.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
               {
                 inline_keyboard: [
                   [
