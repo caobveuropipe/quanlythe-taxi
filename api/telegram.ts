@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (!BOT_TOKEN) {
+  console.warn('TELEGRAM_BOT_TOKEN is not defined in environment variables');
+}
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const SUPER_ADMIN_ID = '5139629652';
 const WEBAPP_URL = 'https://quanly-thetaxi.vercel.app';
@@ -46,7 +49,7 @@ async function answerCallbackQuery(callbackQueryId: string, text: string) {
 
 async function editMessageText(chatId: string | number, messageId: number, text: string, replyMarkup?: any) {
   try {
-    await fetch(`${TELEGRAM_API}/editMessageText`, {
+    const res = await fetch(`${TELEGRAM_API}/editMessageText`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -57,8 +60,10 @@ async function editMessageText(chatId: string | number, messageId: number, text:
         reply_markup: replyMarkup,
       }),
     });
+    return await res.json();
   } catch (err) {
     console.error('editMessageText error:', err);
+    return null;
   }
 }
 
@@ -108,6 +113,14 @@ async function editAllTrackedMessages(
 }
 
 export default async function handler(req: any, res: any) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'active', bot: 'ADM_thetaxi_bot' });
   }
@@ -119,6 +132,17 @@ export default async function handler(req: any, res: any) {
   const update = req.body;
   if (!update) {
     return res.status(400).json({ error: 'Empty body' });
+  }
+
+  // Client-side secure proxy actions: no bot token exposed to browsers!
+  if (update.custom_action === 'sendMessage') {
+    const result = await sendTelegramMessage(update.chat_id, update.text, update.reply_markup);
+    return res.status(200).json(result || { ok: false });
+  }
+
+  if (update.custom_action === 'editMessageText') {
+    const result = await editMessageText(update.chat_id, update.message_id, update.text, update.reply_markup);
+    return res.status(200).json(result || { ok: false });
   }
 
   try {

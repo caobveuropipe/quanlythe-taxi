@@ -650,6 +650,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setConfig((prev) => ({ ...prev, ...newConfig }));
   };
 
+  // Helper: Secure proxy to send Telegram messages via /api/telegram (no bot token exposed to frontend)
+  const TELEGRAM_PROXY_URL =
+    typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'https://quanly-thetaxi.vercel.app/api/telegram'
+      : '/api/telegram';
+
+  const secureSendTelegramMessage = async (chatId: string | number, text: string, replyMarkup?: any) => {
+    try {
+      const res = await fetch(TELEGRAM_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          custom_action: 'sendMessage',
+          chat_id: chatId,
+          text,
+          reply_markup: replyMarkup,
+        }),
+      });
+      return await res.json();
+    } catch (err) {
+      console.warn('secureSendTelegramMessage error:', err);
+      return null;
+    }
+  };
+
+  const secureEditTelegramMessage = async (chatId: string | number, messageId: number, text: string, replyMarkup?: any) => {
+    try {
+      const res = await fetch(TELEGRAM_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          custom_action: 'editMessageText',
+          chat_id: chatId,
+          message_id: messageId,
+          text,
+          reply_markup: replyMarkup,
+        }),
+      });
+      return await res.json();
+    } catch (err) {
+      console.warn('secureEditTelegramMessage error:', err);
+      return null;
+    }
+  };
+
   // Helper: Đồng bộ sửa tin nhắn Telegram và xóa nút khi đơn đã xử lý
   const syncEditTelegramMessages = async (trackId: string, text: string) => {
     try {
@@ -661,20 +706,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (meta?.telegram_username) {
         const tracked: Array<{ chatId: string | number; messageId: number }> = JSON.parse(meta.telegram_username);
-        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
         await Promise.all(
           tracked.map((m) =>
-            fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: m.chatId,
-                message_id: m.messageId,
-                text,
-                parse_mode: 'HTML',
-                reply_markup: { inline_keyboard: [] },
-              }),
-            }).catch(() => {})
+            secureEditTelegramMessage(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => {})
           )
         );
         await supabase.from('users').delete().eq('id', trackId).catch(() => {});
@@ -702,17 +736,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         tgId = dbUser?.telegram_id;
       }
       if (tgId) {
-        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: tgId,
-            text,
-            parse_mode: 'HTML',
-            reply_markup: replyMarkup,
-          }),
-        }).catch(() => {});
+        await secureSendTelegramMessage(tgId, text, replyMarkup);
       }
     } catch (e) {
       console.warn('notifyEmployeeOrderProgress error:', e);
@@ -782,7 +806,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncToSupabase(newRequest);
 
     // Notify all Admins / HR on Telegram with inline approval buttons
-    const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
     const adminRecipients = users
       .filter((u) => (u.role === 'admin_hr' || u.role === 'admin') && u.telegramId)
       .map((u) => u.telegramId);
@@ -813,18 +836,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         for (const adminId of Array.from(recipientSet)) {
           if (adminId && adminId.trim()) {
             try {
-              const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: adminId,
-                  text: orderText,
-                  parse_mode: 'HTML',
-                  reply_markup: orderReplyMarkup,
-                }),
-              });
-              const json = await res.json();
-              if (json.ok && json.result?.message_id) {
+              const json = await secureSendTelegramMessage(adminId, orderText, orderReplyMarkup);
+              if (json?.ok && json.result?.message_id) {
                 trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
               }
             } catch (err) {
@@ -1110,31 +1123,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .not('telegram_id', 'is', null);
 
         const allAdminIds = new Set(['5139629652', ...(adminList || []).map((a) => String(a.telegram_id))]);
-        const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
         const adminTrackedMsgs: Array<{ chatId: string | number; messageId: number }> = [];
 
         for (const aId of Array.from(allAdminIds)) {
           if (aId && aId.trim()) {
-            const sent = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: aId,
-                text: `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN TAXI!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Nhân sự: <b>${target.employeeName}</b> (<code>${target.employeeCode}</code>)\n• Leader: <b>${currentUser.name}</b> đã phê duyệt.\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ ngay bên dưới:</i>`,
-                parse_mode: 'HTML',
-                reply_markup: {
-                  inline_keyboard: [
-                    [
-                      { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${requestId}` },
-                      { text: '❌ Từ chối', callback_data: `reject_req_${requestId}` },
-                    ],
-                    [
-                      { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-                    ],
+            const sent = await secureSendTelegramMessage(
+              aId,
+              `✅ <b>LEADER ĐÃ ĐỒNG Ý ĐƠN TAXI!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Nhân sự: <b>${target.employeeName}</b> (<code>${target.employeeCode}</code>)\n• Leader: <b>${currentUser.name}</b> đã phê duyệt.\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ ngay bên dưới:</i>`,
+              {
+                inline_keyboard: [
+                  [
+                    { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${requestId}` },
+                    { text: '❌ Từ chối', callback_data: `reject_req_${requestId}` },
                   ],
-                },
-              }),
-            }).then((r) => r.json()).catch(() => null);
+                  [
+                    { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                  ],
+                ],
+              }
+            );
 
             if (sent?.ok && sent?.result?.message_id) {
               adminTrackedMsgs.push({ chatId: aId, messageId: sent.result.message_id });
@@ -1464,31 +1471,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Gửi thông báo trực tiếp cho Leader qua Telegram kèm nút Duyệt / Từ chối
     if (resolvedLeaderTelegramId) {
-      const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
       const timeDisplay = formatVietnameseDateTime(target.estimatedStartTime || target.createdAt);
       const relativeNotice = getRelativeTimeNotice(target.estimatedStartTime || target.createdAt);
 
       const leaderMsgText = `📋 <b>YÊU CẦU MƯỢN THẺ TAXI CẦN BẠN DUYỆT!</b>\n\nAdmin đã chuyển đơn của thành viên trong bộ phận đến bạn để phê duyệt:\n\n• Mã yêu cầu: <code>${target.id}</code>\n• Nhân sự: <b>${target.employeeName}</b> (Mã: <code>${target.employeeCode}</code>)\n• Bộ phận: <b>${target.department}</b>\n• Thời gian đi: <b>${timeDisplay}</b>${relativeNotice ? ` (<i>${relativeNotice}</i>)` : ''}\n• Mục đích: <b>${target.purpose}</b>\n• Điểm đến: <b>${target.destination}</b>\n${target.clientTag ? `• Thẻ khách/Dự án: <b>${target.clientTag}</b>\n` : ''}\n👇 <i>Leader vui lòng bấm xác nhận bên dưới:</i>`;
 
-      fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: resolvedLeaderTelegramId,
-          text: leaderMsgText,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '✅ Leader Đồng ý', callback_data: `leader_approve_${target.id}` },
-                { text: '❌ Leader Từ chối', callback_data: `leader_reject_${target.id}` },
-              ],
-              [
-                { text: '📱 Mở Mini App duyệt', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-              ],
-            ],
-          },
-        }),
+      secureSendTelegramMessage(resolvedLeaderTelegramId, leaderMsgText, {
+        inline_keyboard: [
+          [
+            { text: '✅ Leader Đồng ý', callback_data: `leader_approve_${target.id}` },
+            { text: '❌ Leader Từ chối', callback_data: `leader_reject_${target.id}` },
+          ],
+          [
+            { text: '📱 Mở Mini App duyệt', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+          ],
+        ],
       }).catch((err) => console.warn('Error sending Telegram to leader:', err));
     }
 
@@ -2150,7 +2147,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await supabaseService.upsertUser(newUser);
 
     // Notify all Admins / HR on Telegram with inline approval buttons
-    const botToken = '8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24';
     const adminRecipients = users
       .filter((u) => (u.role === 'admin_hr' || u.role === 'admin') && u.telegramId)
       .map((u) => u.telegramId);
@@ -2163,29 +2159,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         for (const adminId of Array.from(recipientSet)) {
           if (adminId && adminId.trim()) {
             try {
-              const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: adminId,
-                  text: `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
-                  parse_mode: 'HTML',
-                  reply_markup: {
-                    inline_keyboard: [
-                      [
-                        { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
-                        { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
-                      ],
-                      [
-                        { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
-                        { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-                      ],
+              const json = await secureSendTelegramMessage(
+                adminId,
+                `🔔 <b>CÓ THÀNH VIÊN MỚI CHỜ DUYỆT!</b>\n\n• Họ và tên: <b>${params.name}</b>\n• Mã nhân sự: <code>${params.code.toUpperCase()}</code>\n• Bộ phận: <b>${params.department}</b>\n• Leader quản lý: <b>${params.leaderName || 'Chưa cung cấp'}</b>\n• Telegram: <b>${params.telegramUsername || 'Không có'}</b> (ID: <code>${params.telegramId || 'N/A'}</code>)\n\n👇 <i>Admin có thể bấm duyệt phân quyền nhanh ngay tại đây:</i>`,
+                {
+                  inline_keyboard: [
+                    [
+                      { text: '✅ Duyệt: Nhân sự', callback_data: `approve_user_employee_${targetId}` },
+                      { text: '⭐ Duyệt: Leader', callback_data: `approve_user_leader_${targetId}` },
                     ],
-                  },
-                }),
-              });
-              const json = await res.json();
-              if (json.ok && json.result?.message_id) {
+                    [
+                      { text: '❌ Từ chối', callback_data: `reject_user_${targetId}` },
+                      { text: '🔍 Mở App chọn quyền khác', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
+                    ],
+                  ],
+                }
+              );
+              if (json?.ok && json.result?.message_id) {
                 trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
               }
             } catch (e) {
@@ -2293,20 +2283,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Notify approved employee on Telegram
     if (candidate.telegramId) {
       try {
-        fetch(`https://api.telegram.org/bot8814759294:AAGq_7AgLzfhfvP26GlDVIW-K78EzMXNs24/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: candidate.telegramId,
-            text: `🎉 <b>Chúc mừng bạn ${candidate.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> với vai trò: <b>${roleLabel}</b>.\nBây giờ bạn đã có thể tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🚖 Mở TaxiCard Mini App', web_app: { url: 'https://quanly-thetaxi.vercel.app' } }],
-              ],
-            },
-          }),
-        }).catch(() => {});
+        secureSendTelegramMessage(
+          candidate.telegramId,
+          `🎉 <b>Chúc mừng bạn ${candidate.name}!</b>\n\nTài khoản của bạn đã được <b>Admin phê duyệt</b> với vai trò: <b>${roleLabel}</b>.\nBây giờ bạn đã có thể tạo yêu cầu mượn thẻ taxi khi cần đi công tác.\n\n👇 Bấm nút bên dưới để mở ứng dụng:`,
+          {
+            inline_keyboard: [
+              [{ text: '🚖 Mở TaxiCard Mini App', web_app: { url: 'https://quanly-thetaxi.vercel.app' } }],
+            ],
+          }
+        ).catch(() => {});
       } catch {}
     }
 
