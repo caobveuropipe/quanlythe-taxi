@@ -116,6 +116,7 @@ interface AppContextType {
     userId: string,
     updates: Partial<UserProfile>
   ) => Promise<{ success: boolean; message: string }>;
+  deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   resetToNewRegistration: () => void;
 }
 
@@ -454,15 +455,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
             applyUsersDelta(resolved, true);
           } else {
-            setUsers(INITIAL_USERS);
-            for (const u of INITIAL_USERS) {
-              await supabaseService.upsertUser(u);
-            }
-          }
-        } else {
-          // If remote users is empty, seed initial admin user
-          for (const u of INITIAL_USERS) {
-            await supabaseService.upsertUser(u);
+            // Không tự động tạo lại mock user nếu bảng users đã được dọn sạch
+            applyUsersDelta([], true);
           }
         }
 
@@ -548,9 +542,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               : [updatedUser, ...currentList];
             applyUsersDelta(newList);
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            const filtered = usersRef.current.filter((u) => u.id !== payload.old.id);
+            const targetId = payload.old.id;
+            const filtered = usersRef.current.filter((u) => u.id !== targetId);
             setUsers(filtered);
             usersRef.current = filtered;
+            localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(filtered));
+
+            if (currentUserRef.current.id === targetId) {
+              const fallback = filtered[0] || INITIAL_USERS[0];
+              setCurrentUser(fallback);
+              currentUserRef.current = fallback;
+              localStorage.setItem(`${STORAGE_KEY}_currentUserId`, fallback.id);
+            }
           }
         });
       } catch (err) {
@@ -2362,6 +2365,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Cập nhật thông tin hồ sơ thành công!' };
   };
 
+  const deleteUser = async (userId: string) => {
+    try {
+      await supabaseService.deleteUser(userId);
+    } catch (e) {
+      console.warn('Supabase deleteUser error:', e);
+    }
+    const filtered = users.filter((u) => u.id !== userId);
+    setUsers(filtered);
+    usersRef.current = filtered;
+    localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(filtered));
+
+    if (currentUser.id === userId) {
+      const fallbackUser = filtered[0] || INITIAL_USERS[0];
+      setCurrentUser(fallbackUser);
+      currentUserRef.current = fallbackUser;
+      localStorage.setItem(`${STORAGE_KEY}_currentUserId`, fallbackUser.id);
+    }
+
+    return { success: true, message: 'Đã xóa hồ sơ nhân sự thành công!' };
+  };
+
   const resetToNewRegistration = () => {
     const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
     setCurrentUser({
@@ -2423,6 +2447,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approveUser,
         rejectUser,
         updateUserProfile,
+        deleteUser,
         resetToNewRegistration,
       }}
     >

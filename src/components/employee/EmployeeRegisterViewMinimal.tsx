@@ -222,30 +222,103 @@ export const EmployeeRegisterViewMinimal: React.FC<EmployeeRegisterViewMinimalPr
       </div>
 
       {/* Active Request Notice if any */}
-      {activeReq && (
-        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs space-y-2 animate-in fade-in">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Bạn đang có đơn {activeReq.id} đang xử lý</span>
+      {/* Active Request Notice if any */}
+      {activeReq && (() => {
+        const isHandoverReady = activeReq.status === 'pending_handover';
+        const isHolding = activeReq.status === 'holding_card';
+        const isWaitlist = activeReq.status === 'waitlist_cards';
+        const isPendingLeader = activeReq.status === 'pending_leader';
+        const isPendingAdmin = activeReq.status === 'pending_admin';
+        const isPendingBill = activeReq.status === 'returned_pending_bill';
+
+        let containerClass = 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200';
+        let badgeClass = 'bg-amber-200/80 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200';
+        let badgeText = 'Đang xử lý';
+        let titleText = `Bạn đang có đơn ${activeReq.id} đang xử lý`;
+        let descText = 'Quy định công ty: Mỗi nhân sự chỉ có tối đa 1 lượt mượn thẻ đang hoạt động. Vui lòng hoàn tất hoặc hủy đơn cũ trước khi gửi đơn mới.';
+        let btnClass = 'bg-amber-600 hover:bg-amber-700 text-white';
+        let btnText = `Xem chi tiết đơn ${activeReq.id}`;
+        let IconComponent = AlertCircle;
+        let iconColor = 'text-amber-600';
+
+        if (isHandoverReady) {
+          containerClass = 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 ring-1 ring-emerald-500/20';
+          badgeClass = 'bg-emerald-600 text-white font-bold';
+          badgeText = `Đã cấp thẻ: ${activeReq.reservedCardCode || 'TAXI'}`;
+          titleText = `ĐÃ CÓ THẺ CHO BẠN (${activeReq.reservedCardCode || 'TAXI'}) 🎉`;
+          descText = `Admin đã phê duyệt và gán thẻ ${activeReq.reservedCardCode || ''}. Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ trước khi khởi hành nhé!`;
+          btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs';
+          btnText = `Đến quầy nhận thẻ • Xem chi tiết`;
+          IconComponent = CheckCircle2;
+          iconColor = 'text-emerald-600';
+        } else if (isHolding) {
+          containerClass = 'bg-teal-50 dark:bg-teal-950/40 border-teal-300 dark:border-teal-700 text-teal-900 dark:text-teal-200';
+          badgeClass = 'bg-teal-600 text-white font-bold';
+          badgeText = `Đang giữ thẻ: ${activeReq.actualCardCode || 'TAXI'}`;
+          titleText = `Bạn đang giữ thẻ ${activeReq.actualCardCode || ''}`;
+          descText = 'Thẻ taxi vật lý đang nằm tại bạn. Vui lòng hoàn trả thẻ và bổ sung hóa đơn/vé taxi sau khi chuyến đi kết thúc.';
+          btnClass = 'bg-teal-600 hover:bg-teal-700 text-white';
+          btnText = `Xem thẻ & Trả thẻ`;
+          IconComponent = CreditCard;
+          iconColor = 'text-teal-600';
+        } else if (isWaitlist) {
+          containerClass = 'bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-800 text-purple-900 dark:text-purple-200';
+          badgeClass = 'bg-purple-200 dark:bg-purple-900/60 text-purple-900 dark:text-purple-200 font-semibold';
+          badgeText = 'Đang xếp hàng chờ thẻ';
+          titleText = `Đơn ${activeReq.id} đang chờ thẻ vào kho`;
+          descText = 'Đơn của bạn đã được duyệt. Hệ thống sẽ tự động gán thẻ và thông báo ngay khi có nhân sự trả thẻ về kho.';
+          btnClass = 'bg-purple-600 hover:bg-purple-700 text-white';
+          IconComponent = Clock;
+          iconColor = 'text-purple-600';
+        } else if (isPendingAdmin) {
+          containerClass = 'bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200';
+          badgeClass = 'bg-blue-200 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-semibold';
+          badgeText = 'Chờ Admin cấp thẻ';
+          titleText = `Đơn ${activeReq.id} đang chờ Admin cấp thẻ`;
+          descText = 'Leader đã duyệt đơn của bạn. Yêu cầu đang được Admin chuẩn bị thẻ vật lý tại quầy.';
+          btnClass = 'bg-blue-600 hover:bg-blue-700 text-white';
+          IconComponent = Clock;
+          iconColor = 'text-blue-600';
+        } else if (isPendingLeader) {
+          badgeText = 'Chờ Leader duyệt';
+          titleText = `Đơn ${activeReq.id} đang chờ Leader duyệt`;
+          descText = `Hệ thống đã gửi thông báo đến Leader quản lý (${activeReq.leaderName || 'trực tiếp'}). Vui lòng chờ Leader phê duyệt.`;
+          IconComponent = Clock;
+        } else if (isPendingBill) {
+          containerClass = 'bg-orange-50 dark:bg-orange-950/40 border-orange-300 dark:border-orange-800 text-orange-900 dark:text-orange-200';
+          badgeClass = 'bg-orange-200 dark:bg-orange-900/60 text-orange-900 dark:text-orange-200 font-semibold';
+          badgeText = 'Bổ sung hóa đơn';
+          titleText = `Đơn ${activeReq.id} đã trả thẻ, chờ nộp bill`;
+          descText = 'Bạn đã hoàn trả thẻ vật lý vào kho. Vui lòng chụp ảnh hóa đơn/biên lai để hoàn tất đơn này.';
+          btnClass = 'bg-orange-600 hover:bg-orange-700 text-white';
+          btnText = `Nộp hóa đơn taxi`;
+        }
+
+        return (
+          <div className={`p-3.5 rounded-2xl border text-xs space-y-2 animate-in fade-in ${containerClass}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-bold">
+                <IconComponent className={`w-4 h-4 shrink-0 ${iconColor}`} />
+                <span className="line-clamp-1">{titleText}</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${badgeClass}`}>
+                {badgeText}
+              </span>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/60 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-semibold">
-              {activeReq.status === 'holding_card' ? 'Đang giữ thẻ' : 'Chờ duyệt / giao'}
-            </span>
+            <p className="text-[11px] opacity-90 leading-relaxed">
+              {descText}
+            </p>
+            <button
+              type="button"
+              onClick={onGoToRequests}
+              className={`w-full py-2 px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors ${btnClass}`}
+            >
+              <span>{btnText}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-            Quy định công ty: Mỗi nhân sự chỉ có tối đa 1 lượt mượn thẻ đang hoạt động. Vui lòng hoàn tất hoặc hủy đơn cũ trước khi gửi đơn mới.
-          </p>
-          <button
-            type="button"
-            onClick={onGoToRequests}
-            className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors"
-          >
-            <span>Xem chi tiết đơn {activeReq.id}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Error alert if any */}
       {errorMessage && (
