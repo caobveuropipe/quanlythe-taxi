@@ -167,19 +167,19 @@ export const AdminReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Total Overview Banner */}
-      <div className="p-3 bg-slate-900 text-white dark:bg-slate-800 border border-slate-800 flex items-center justify-between">
+      {/* Total Overview Banner (Giao diện Sáng tinh tế) */}
+      <div className="p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50/50 to-slate-50 border border-blue-200/80 rounded-xl flex items-center justify-between shadow-2xs">
         <div>
-          <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
+          <span className="text-[10px] font-bold text-blue-900/70 uppercase tracking-wider block">
             Tổng cước thực tế toàn bộ {selectedMonth === '2026-10' ? 'Tháng 10' : 'Tháng 9'}
           </span>
-          <div className="font-mono text-lg font-bold text-emerald-400 tabular-nums">
+          <div className="font-mono text-xl font-bold text-blue-600 tabular-nums mt-0.5">
             {grandTotalCost.toLocaleString('vi-VN')} đ
           </div>
         </div>
-        <div className="text-right text-xs text-slate-300">
-          <div>{grandTotalTripsWithBill} lượt có hóa đơn</div>
-          <div className="text-[10px] text-slate-400">{sortedSummaries.length} nhân sự tham gia</div>
+        <div className="text-right text-xs text-slate-600">
+          <div className="font-semibold text-slate-800">{grandTotalTripsWithBill} lượt có hóa đơn</div>
+          <div className="text-[10px] text-slate-500">{sortedSummaries.length} nhân sự tham gia</div>
         </div>
       </div>
 

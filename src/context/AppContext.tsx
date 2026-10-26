@@ -206,7 +206,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return (saved === 'standard' || saved === 'minimalist') ? saved : 'minimalist';
   });
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem(`${STORAGE_KEY}_dark`) === 'true';
+    // Mặc định luôn là giao diện sáng (Light theme)
+    return false;
   });
 
   const toggleUiDensityMode = () => {

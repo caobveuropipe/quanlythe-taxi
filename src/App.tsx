@@ -74,14 +74,14 @@ const MainAppContent: React.FC = () => {
   ).length;
 
   return (
-    <div className="h-[100dvh] w-full bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans overflow-hidden">
+    <div className="h-[100dvh] w-full bg-slate-100 text-slate-900 flex flex-col font-sans overflow-hidden">
       {/* Main Viewport Container */}
       <main className="flex-1 flex justify-center items-stretch h-full overflow-hidden p-0 sm:p-4">
         <div
-          className={`w-full bg-white dark:bg-slate-900 flex flex-col h-full relative ${
+          className={`w-full bg-white flex flex-col h-full relative ${
             activeViewMode === 'mobile'
-              ? 'max-w-[480px] sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200/90 dark:border-slate-800'
-              : 'max-w-4xl sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200 dark:border-slate-800'
+              ? 'max-w-[480px] sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200/90'
+              : 'max-w-4xl sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200'
           }`}
         >
           {/* In-App Realtime Notification Toast */}
@@ -182,7 +182,7 @@ const MainAppContent: React.FC = () => {
               ======================================================== */}
           {!subView && !isPendingOrRejected && (
             <div className="fixed bottom-3 sm:bottom-4 inset-x-0 z-40 pointer-events-none px-3">
-              <nav className="pointer-events-auto max-w-[390px] sm:max-w-md mx-auto bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-xl text-white rounded-full p-1.5 shadow-2xl border border-slate-700/70 dark:border-slate-600/70 flex items-center justify-around ring-1 ring-black/20">
+              <nav className="pointer-events-auto max-w-[390px] sm:max-w-md mx-auto bg-white/95 backdrop-blur-xl text-slate-700 rounded-full p-1.5 shadow-xl border border-slate-200/90 flex items-center justify-around ring-1 ring-slate-900/5">
                 {/* Employee Dock (2 tabs) */}
                 {!isAdminOrHR && !isLeader && (
                   <>
@@ -191,7 +191,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-3 rounded-full flex items-center justify-center gap-1.5 text-xs transition-all ${
                         activeTab === 'register'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <FilePlus className="w-3.5 h-3.5" />
@@ -202,7 +202,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-3 rounded-full flex items-center justify-center gap-1.5 text-xs transition-all ${
                         activeTab === 'requests'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <ListFilter className="w-3.5 h-3.5" />
@@ -219,7 +219,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all relative ${
                         activeTab === 'leader_approvals'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <CheckSquare className="w-3.5 h-3.5" />
@@ -235,7 +235,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all ${
                         activeTab === 'register'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <FilePlus className="w-3.5 h-3.5" />
@@ -246,7 +246,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all ${
                         activeTab === 'requests'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <ListFilter className="w-3.5 h-3.5" />
@@ -263,7 +263,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all relative ${
                         activeTab === 'actions'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <CheckSquare className="w-3.5 h-3.5" />
@@ -279,7 +279,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all ${
                         activeTab === 'inventory'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <CreditCard className="w-3.5 h-3.5" />
@@ -290,7 +290,7 @@ const MainAppContent: React.FC = () => {
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all ${
                         activeTab === 'reports'
                           ? 'bg-blue-600 text-white font-bold shadow-md'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                       }`}
                     >
                       <BarChart3 className="w-3.5 h-3.5" />

@@ -69,20 +69,20 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
         const isError = notif.type === 'error';
 
         const bgBorder = isSuccess
-          ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-100 shadow-emerald-950/40'
+          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-emerald-900/10'
           : isWarning
-          ? 'bg-amber-950/90 border-amber-500/40 text-amber-100 shadow-amber-950/40'
+          ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-amber-900/10'
           : isError
-          ? 'bg-rose-950/90 border-rose-500/40 text-rose-100 shadow-rose-950/40'
-          : 'bg-slate-900/90 border-blue-500/40 text-slate-100 shadow-slate-950/40';
+          ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-rose-900/10'
+          : 'bg-white border-blue-200 text-slate-800 shadow-slate-900/10';
 
         const iconColor = isSuccess
-          ? 'text-emerald-400'
+          ? 'text-emerald-600'
           : isWarning
-          ? 'text-amber-400'
+          ? 'text-amber-600'
           : isError
-          ? 'text-rose-400'
-          : 'text-blue-400';
+          ? 'text-rose-600'
+          : 'text-blue-600';
 
         return (
           <div
