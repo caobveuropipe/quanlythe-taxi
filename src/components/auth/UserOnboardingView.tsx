@@ -228,37 +228,34 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
 
   // 3. STATE: REGISTRATION / EDIT FORM (Shown immediately for new users or upon editing)
   return (
-    <div className="p-4 sm:p-6 max-w-md mx-auto space-y-4">
-      {/* Header */}
-      <div className="text-center space-y-1 pb-2 border-b border-slate-100 dark:border-slate-800">
-        <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-2">
-          {hasSubmittedProfile ? <Pencil className="w-6 h-6" /> : <UserPlus className="w-6 h-6" />}
-        </div>
-        <h2 className="text-base font-bold text-slate-900 dark:text-white">
-          {hasSubmittedProfile ? 'Chỉnh sửa thông tin hồ sơ' : 'Khai báo thông tin nhân sự'}
+    <div className="p-3.5 sm:p-5 max-w-md mx-auto space-y-2.5">
+      {/* Header tinh gọn: Bỏ avatar lớn & chú thích phụ để tối ưu chiều cao */}
+      <div className="text-center pb-1.5 border-b border-slate-100 dark:border-slate-800">
+        <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center justify-center gap-1.5">
+          {hasSubmittedProfile ? (
+            <Pencil className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          ) : (
+            <UserPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          )}
+          <span>{hasSubmittedProfile ? 'Chỉnh sửa thông tin hồ sơ' : 'Khai báo thông tin nhân sự'}</span>
         </h2>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          {hasSubmittedProfile
-            ? 'Cập nhật thông tin định danh để gửi lại cho Quản trị viên xét duyệt'
-            : 'Chỉ cần khai báo 1 lần duy nhất để bắt đầu sử dụng Hệ thống Thẻ Taxi'}
-        </p>
       </div>
 
       {errors.form && (
-        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+        <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{errors.form}</span>
         </div>
       )}
 
       {submitFeedback && (
-        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
+        <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{submitFeedback}</span>
         </div>
       )}
 
-      <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
+      <form onSubmit={handleRegister} className="space-y-2.5 text-xs">
         {/* 1. Họ và tên */}
         <div>
           <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
@@ -272,7 +269,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
               if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
             }}
             placeholder="Ví dụ: Nguyễn Văn A"
-            className={`w-full p-2.5 bg-white dark:bg-slate-800 border ${
+            className={`w-full py-2 px-2.5 bg-white dark:bg-slate-800 border ${
               errors.name ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 dark:border-slate-700'
             } text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium`}
           />
@@ -296,7 +293,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
               if (errors.code) setErrors((prev) => ({ ...prev, code: '' }));
             }}
             placeholder="Ví dụ: NV-1024 hoặc 110402"
-            className={`w-full p-2.5 font-mono bg-white dark:bg-slate-800 border ${
+            className={`w-full py-2 px-2.5 font-mono bg-white dark:bg-slate-800 border ${
               errors.code ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 dark:border-slate-700'
             } text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium`}
           />
@@ -321,7 +318,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
               if (errors.department) setErrors((prev) => ({ ...prev, department: '' }));
             }}
             placeholder="Ví dụ: Ban Kinh Doanh, Phòng Kỹ Thuật..."
-            className={`w-full p-2.5 bg-white dark:bg-slate-800 border ${
+            className={`w-full py-2 px-2.5 bg-white dark:bg-slate-800 border ${
               errors.department ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 dark:border-slate-700'
             } text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium`}
           />
@@ -345,7 +342,7 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
               if (errors.leaderName) setErrors((prev) => ({ ...prev, leaderName: '' }));
             }}
             placeholder="Ví dụ: Trần Thị Bích"
-            className={`w-full p-2.5 bg-white dark:bg-slate-800 border ${
+            className={`w-full py-2 px-2.5 bg-white dark:bg-slate-800 border ${
               errors.leaderName ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 dark:border-slate-700'
             } text-slate-900 dark:text-white focus:outline-hidden focus:border-blue-500 font-medium`}
           />
@@ -354,13 +351,10 @@ export const UserOnboardingView: React.FC<UserOnboardingViewProps> = ({ onSucces
               <AlertCircle className="w-3 h-3" /> {errors.leaderName}
             </p>
           )}
-          <p className="text-[10px] text-slate-400 mt-1">
-            * Nhập đúng họ tên người quản lý sẽ duyệt các chuyến taxi của bạn.
-          </p>
         </div>
 
         {/* Telegram Identity Status (Auto-filled / Readonly) */}
-        <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 text-[11px] space-y-1">
+        <div className="py-2 px-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 text-[11px] space-y-0.5">
           <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
             <Send className="w-3.5 h-3.5 text-blue-500" />
             <span>Định danh Telegram thu thập tự động:</span>
