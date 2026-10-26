@@ -27,10 +27,21 @@ const MainAppContent: React.FC = () => {
   // Initialize Telegram WebApp SDK if opened in real Telegram client
   useEffect(() => {
     try {
-      const tg = (window as unknown as { Telegram?: { WebApp?: { ready: () => void; expand: () => void } } }).Telegram?.WebApp;
+      const tg = (window as unknown as {
+        Telegram?: {
+          WebApp?: {
+            ready: () => void;
+            expand: () => void;
+            setHeaderColor?: (color: string) => void;
+            setBackgroundColor?: (color: string) => void;
+          };
+        };
+      }).Telegram?.WebApp;
       if (tg) {
         tg.ready();
         tg.expand();
+        tg.setHeaderColor?.('#ffffff');
+        tg.setBackgroundColor?.('#f8fafc');
       }
     } catch (e) {
       console.warn('Telegram WebApp init warning:', e);

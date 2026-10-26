@@ -240,13 +240,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [requests]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_dark`, String(isDarkMode));
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    localStorage.setItem(`${STORAGE_KEY}_dark`, 'false');
+    document.documentElement.classList.remove('dark');
+  }, []);
 
   const [supabaseStatus, setSupabaseStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
 
