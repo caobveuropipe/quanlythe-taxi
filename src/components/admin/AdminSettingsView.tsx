@@ -12,7 +12,15 @@ import {
   CheckCircle2,
   Send,
   HelpCircle,
+  Key,
 } from 'lucide-react';
+import { AdminOcrKeyModal } from './AdminOcrKeyModal';
+import {
+  getCustomGeminiKey,
+  maskApiKey,
+  getDailySystemUsageCount,
+  MAX_DAILY_SYSTEM_OCR_LIMIT,
+} from '../../utils/geminiKeyStorage';
 
 interface AdminSettingsViewProps {
   onOpenUserManagement?: () => void;
@@ -23,6 +31,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
 
   const [maxSpendInput, setMaxSpendInput] = useState<string>(String(config.maxSpendPerTrip));
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrKeyTick, setOcrKeyTick] = useState(0);
+
+  const customKey = getCustomGeminiKey();
+  const systemUsage = getDailySystemUsageCount();
+  const remainingQuota = Math.max(0, MAX_DAILY_SYSTEM_OCR_LIMIT - systemUsage);
 
   const handleRoleChange = async (userId: string, userName: string, newRole: UserRole) => {
     const isLeader = newRole === 'leader' || newRole === 'admin_hr';
@@ -192,7 +206,53 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
         </div>
       </div>
 
-      {/* 4. Danh sách tài khoản & Phân quyền */}
+      {/* 4. Cấu hình AI OCR Hóa đơn (Google Gemini) */}
+      <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+            <Key className="w-3.5 h-3.5 text-blue-500" />
+            <span>Cấu hình AI OCR Hóa đơn (Google Gemini)</span>
+          </div>
+          <span className="text-[10px] text-slate-400">Model BYOK</span>
+        </div>
+
+        <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-600 dark:text-slate-300">Nguồn API hiện tại:</span>
+            {customKey ? (
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 rounded">
+                🔑 Key cá nhân ({maskApiKey(customKey)})
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 rounded">
+                ⚡ Key Hệ Thống dùng chung (Còn {remainingQuota}/20 lượt hôm nay)
+              </span>
+            )}
+          </div>
+
+          <div className="text-[11px] text-slate-500">
+            Hệ thống hỗ trợ Admin tự nhập API Key cá nhân để quét hóa đơn taxi không giới hạn lượt gọi và không phụ thuộc vào hạn mức dùng chung.
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowOcrModal(true)}
+            className="w-full py-2 px-3 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+          >
+            <Key className="w-3.5 h-3.5 text-blue-600" />
+            <span>{customKey ? 'Thay đổi hoặc Gỡ Key cá nhân' : 'Thêm API Key cá nhân của bạn ➔'}</span>
+          </button>
+        </div>
+      </div>
+
+      {showOcrModal && (
+        <AdminOcrKeyModal
+          onClose={() => setShowOcrModal(false)}
+          onKeyUpdated={() => setOcrKeyTick((t) => t + 1)}
+        />
+      )}
+
+      {/* 5. Danh sách tài khoản & Phân quyền */}
       <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
