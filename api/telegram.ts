@@ -71,7 +71,8 @@ async function editAllTrackedMessages(
   trackId: string,
   currentChatId?: string | number,
   currentMessageId?: number,
-  text: string = ''
+  text: string = '',
+  keepTracker: boolean = false
 ) {
   let tracked: Array<{ chatId: string | number; messageId: number }> = [];
   try {
@@ -108,8 +109,10 @@ async function editAllTrackedMessages(
     );
   }
 
-  // Dọn dẹp bản ghi tracker khỏi Supabase
-  await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+  // Dọn dẹp bản ghi tracker khỏi Supabase (chỉ xóa khi không yêu cầu giữ lại)
+  if (!keepTracker) {
+    await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+  }
 }
 
 export default async function handler(req: any, res: any) {
@@ -438,12 +441,13 @@ export default async function handler(req: any, res: any) {
 
           await answerCallbackQuery(cb.id, `⏳ Kho hết thẻ trống! Đơn ${reqId} đã được đưa vào danh sách chờ thẻ.`);
 
-          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
+          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (nhưng giữ tracker để bước cấp thẻ sau sửa tiếp)
           await editAllTrackedMessages(
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`
+            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`,
+            true
           );
 
           // Thông báo cho nhân viên

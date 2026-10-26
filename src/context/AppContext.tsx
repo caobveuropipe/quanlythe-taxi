@@ -699,7 +699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Helper: Đồng bộ sửa tin nhắn Telegram và xóa nút khi đơn đã xử lý
-  const syncEditTelegramMessages = async (trackId: string, text: string) => {
+  const syncEditTelegramMessages = async (trackId: string, text: string, keepTracker: boolean = false) => {
     try {
       const { data: meta } = await supabase
         .from('users')
@@ -714,7 +714,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             secureEditTelegramMessage(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => {})
           )
         );
-        await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+        if (!keepTracker) {
+          await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+        }
       }
     } catch (e) {
       console.warn('syncEditTelegramMessages error:', e);
@@ -1050,6 +1052,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         waitlistTarget.employeeId,
         `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Thẻ đã gán: <b>${cardCode}</b> (vừa hoàn trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý trước giờ đi nhé!`
       );
+      syncEditTelegramMessages(
+        `msg_track_req_${waitlistTarget.id}`,
+        `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b> (<code>${waitlistTarget.employeeCode}</code>)\n• Thẻ tự động gán: <b>${cardCode}</b> (vừa trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
+        false
+      );
     }
 
     return assignedReq;
@@ -1081,6 +1088,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
     syncToSupabase(updatedReq);
+
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `🚫 <b>YÊU CẦU MƯỢN THẺ ĐÃ BỊ HỦY!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Lý do: <i>${reason?.trim() || 'Người tạo chủ động hủy yêu cầu'}</i>\n• Trạng thái: <b>Đã hủy</b>`,
+      false
+    );
 
     return { success: true, message: 'Đã hủy yêu cầu mượn thẻ thành công.' };
   };
@@ -1389,7 +1402,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
-        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`
+        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`,
+        true
       );
 
       // Thông báo cho nhân viên biết đơn đã duyệt và đang chờ thẻ
@@ -1546,6 +1560,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ được cấp: <b>${cardCode}</b>\n• Người cấp: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ nhé!`
     );
 
+    // Cập nhật tin nhắn Telegram của Admin và gỡ toàn bộ nút bấm
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `✅ <b>ĐÃ CẤP THẺ TỪ HÀNG CHỜ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ được cấp: <b>${cardCode}</b>\n• Người cấp: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`,
+      false
+    );
+
     return {
       success: true,
       message: `Đã cấp thẻ ${cardCode} cho ${targetReq.employeeName}. Chuyển sang chờ bàn giao.`,
@@ -1610,6 +1631,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `🔑 <b>BẠN ĐÃ NHẬN THẺ TAXI THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ đang giữ: <b>${actualCardCode}</b>\n• Người bàn giao: <b>${operatorName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>\n\n👉 Chúc bạn có chuyến đi thuận lợi! Bạn nhớ giữ hóa đơn/cuống vé và hoàn trả thẻ cho Admin sau khi về nhé.`
     );
 
+    // Cập nhật tin nhắn Telegram của Admin sang trạng thái đang giữ thẻ
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `🔑 <b>ĐÃ BÀN GIAO THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ đang giữ: <b>${actualCardCode}</b>\n• Người bàn giao: <b>${operatorName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>`,
+      false
+    );
+
     return {
       success: true,
       message: `Đã xác nhận bàn giao thẻ ${actualCardCode} cho ${targetReq.employeeName}.`,
@@ -1648,6 +1676,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
     syncToSupabase(updatedReq, cardsRef.current);
+
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `⚠️ <b>THẺ ĐÃ GIỮ ĐÃ BỊ GIẢI PHÓNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b>\n• Người thực hiện: <b>${operatorName}</b>\n• Lý do: <i>${reason.trim()}</i>`,
+      false
+    );
 
     return {
       success: true,
