@@ -13,7 +13,18 @@ import {
   MapPin,
   DollarSign,
   Upload,
+  Sparkles,
+  Key,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
+import { scanTaxiReceipt } from '../../services/geminiOcrService';
+import {
+  getCustomGeminiKey,
+  getDailySystemUsageCount,
+  MAX_DAILY_SYSTEM_OCR_LIMIT,
+} from '../../utils/geminiKeyStorage';
+import { AdminOcrKeyModal } from './AdminOcrKeyModal';
 
 interface ReturnCardAndBillModalProps {
   request: TaxiRequest;
@@ -42,19 +53,87 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // OCR state
+  const [isScanningOcr, setIsScanningOcr] = useState(false);
+  const [ocrSuggested, setOcrSuggested] = useState(Boolean(request.tripDetails?.ocrSuggested));
+  const [ocrMessage, setOcrMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [keyUpdateTick, setKeyUpdateTick] = useState(0);
+
   const maxSpend = config.maxSpendPerTrip;
   const costNum = isCostMissing ? 0 : parseInt(actualCostStr.replace(/\D/g, ''), 10) || 0;
   const isOverBudget = !isCostMissing && costNum > maxSpend;
   const overBudgetAmount = isOverBudget ? costNum - maxSpend : 0;
+
+  const currentCustomKey = getCustomGeminiKey();
+  const systemUsage = getDailySystemUsageCount();
+  const remainingSystemUsage = Math.max(0, MAX_DAILY_SYSTEM_OCR_LIMIT - systemUsage);
+
+  // Hàm quét ảnh hóa đơn bằng OCR
+  const executeOcrScan = async (fileOrUrl: File | string) => {
+    setIsScanningOcr(true);
+    setOcrMessage(null);
+
+    try {
+      const res = await scanTaxiReceipt(fileOrUrl, currentUser.code);
+
+      if (res.success && res.data) {
+        let fieldsUpdated = 0;
+
+        if (res.data.actualCost && res.data.actualCost > 0) {
+          setActualCostStr(String(res.data.actualCost));
+          setIsCostMissing(false);
+          fieldsUpdated++;
+        }
+        if (res.data.pickupPoint && res.data.pickupPoint.trim()) {
+          setPickupPoint(res.data.pickupPoint.trim());
+          fieldsUpdated++;
+        }
+        if (res.data.dropoffPoint && res.data.dropoffPoint.trim()) {
+          setDropoffPoint(res.data.dropoffPoint.trim());
+          fieldsUpdated++;
+        }
+        if (res.data.receiptNumber && res.data.receiptNumber.trim()) {
+          setReceiptNumber(res.data.receiptNumber.trim());
+          fieldsUpdated++;
+        }
+
+        setOcrSuggested(true);
+
+        const sourceLabel = res.data.source === 'custom' ? 'Key cá nhân' : 'Key hệ thống';
+        const costText = res.data.actualCost ? `${res.data.actualCost.toLocaleString('vi-VN')} đ` : '';
+        setOcrMessage({
+          text: `✨ Đã quét thành công ${costText ? `(${costText})` : ''} qua ${sourceLabel}. Vui lòng đối chiếu với ảnh!`,
+          type: 'success',
+        });
+      } else {
+        setOcrMessage({
+          text: res.message || 'Không thể bóc tách hóa đơn. Bạn có thể tự nhập tay số tiền.',
+          type: 'warning',
+        });
+      }
+    } catch (err: any) {
+      setOcrMessage({
+        text: err?.message || 'Có lỗi khi phân tích hóa đơn AI.',
+        type: 'error',
+      });
+    } finally {
+      setIsScanningOcr(false);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        setReceiptPhotoUrl(ev.target?.result as string);
+        const dataUrl = ev.target?.result as string;
+        setReceiptPhotoUrl(dataUrl);
       };
       reader.readAsDataURL(file);
+
+      // Kích hoạt quét OCR tự động
+      executeOcrScan(file);
     }
   };
 
@@ -83,7 +162,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
         isCostMissing,
         receiptNumber,
         receiptPhotoUrl,
-        ocrSuggested: false,
+        ocrSuggested,
         operatorName: currentUser.name,
       });
 
@@ -195,26 +274,77 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Ảnh chụp hóa đơn / cuống vé (tùy chọn) */}
-          <div className="space-y-2">
+          {/* 2. Ảnh chụp hóa đơn & Bộ quét AI OCR */}
+          <div className="space-y-2 p-3 bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                 <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                <span>Ảnh chụp hóa đơn / biên lai (nếu có)</span>
+                <span>Ảnh chụp hóa đơn / cuống vé taxi</span>
               </span>
-              {receiptPhotoUrl && (
+
+              {/* Nút cấu hình Key OCR */}
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setReceiptPhotoUrl('')}
-                  className="text-[11px] text-rose-500 hover:underline"
+                  onClick={() => setShowKeyModal(true)}
+                  className={`text-[10px] px-2 py-0.5 border flex items-center gap-1 transition-colors ${
+                    currentCustomKey
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'bg-white text-slate-600 border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 hover:border-blue-400'
+                  }`}
+                  title="Cài đặt API Key cá nhân để quét không giới hạn"
                 >
-                  Xóa ảnh
+                  <Key className="w-3 h-3" />
+                  <span>
+                    {currentCustomKey ? 'Key riêng' : `Key chung (${remainingSystemUsage}/20)`}
+                  </span>
                 </button>
-              )}
+
+                {receiptPhotoUrl && !isScanningOcr && (
+                  <button
+                    type="button"
+                    onClick={() => executeOcrScan(receiptPhotoUrl)}
+                    className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center gap-1 transition-colors"
+                    title="Quét lại hóa đơn bằng AI"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Quét lại AI</span>
+                  </button>
+                )}
+
+                {receiptPhotoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceiptPhotoUrl('');
+                      setOcrMessage(null);
+                    }}
+                    className="text-[11px] text-rose-500 hover:underline ml-1"
+                  >
+                    Xóa
+                  </button>
+                )}
+              </div>
             </div>
 
+            {/* Thông báo tiến trình hoặc kết quả quét OCR */}
+            {ocrMessage && (
+              <div
+                className={`p-2 text-xs border flex items-start gap-1.5 animate-in fade-in ${
+                  ocrMessage.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-200 border-emerald-200'
+                    : ocrMessage.type === 'warning'
+                    ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 border-amber-200'
+                    : 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200 border-rose-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-600" />
+                <span className="text-[11px] leading-tight">{ocrMessage.text}</span>
+              </div>
+            )}
+
             {receiptPhotoUrl ? (
-              <div className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 space-y-1.5">
+              <div className="relative border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2">
                 <div className="max-h-48 overflow-hidden flex items-center justify-center bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
                   <img
                     src={receiptPhotoUrl}
@@ -222,15 +352,32 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
                     className="object-contain max-h-48 w-auto"
                   />
                 </div>
+
+                {/* Overlay khi AI đang đọc ảnh */}
+                {isScanningOcr && (
+                  <div className="absolute inset-0 bg-slate-900/75 backdrop-blur-xs flex flex-col items-center justify-center text-white p-3 space-y-2 animate-in fade-in">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                    <div className="text-xs font-semibold flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                      <span>Gemini AI đang bóc tách số tiền & thông tin...</span>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Tự động trích xuất cước taxi, điểm đón và số hóa đơn
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50 dark:bg-slate-900/50 cursor-pointer transition-colors">
-                <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Tải lên ảnh hóa đơn / cuống vé taxi
+              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-slate-900/50 cursor-pointer transition-colors relative">
+                <div className="flex items-center gap-1.5 text-blue-600 mb-1">
+                  <Upload className="w-4 h-4" />
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                </div>
+                <span className="text-xs font-medium text-slate-800 dark:text-slate-200 text-center">
+                  Tải hoặc chụp ảnh hóa đơn để <strong>AI tự điền số tiền</strong>
                 </span>
                 <span className="text-[10px] text-slate-400 mt-0.5">
-                  Hỗ trợ định dạng JPG, PNG, WEBP
+                  Hỗ trợ JPG, PNG, WEBP · Tự động đọc cước xe, điểm đón/trả
                 </span>
                 <input
                   type="file"
@@ -294,9 +441,17 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
             <div className="space-y-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-800 dark:text-slate-200 block">
-                    Số tiền thực tế trên bill (VNĐ) <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-slate-800 dark:text-slate-200 block">
+                      Số tiền thực tế trên bill (VNĐ) <span className="text-rose-500">*</span>
+                    </label>
+                    {ocrSuggested && costNum > 0 && (
+                      <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 border border-blue-200 flex items-center gap-0.5">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>Gợi ý từ AI</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type="text"
@@ -388,6 +543,14 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
             </button>
           </div>
         </form>
+
+        {/* Modal cấu hình Key OCR */}
+        {showKeyModal && (
+          <AdminOcrKeyModal
+            onClose={() => setShowKeyModal(false)}
+            onKeyUpdated={() => setKeyUpdateTick((t) => t + 1)}
+          />
+        )}
       </div>
     </div>
   );
