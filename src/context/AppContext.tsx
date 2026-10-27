@@ -360,12 +360,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Status changed!
           if (isMyOrder) {
             switch (req.status) {
-              case 'admin_approved':
-              case 'card_assigned':
+              case 'pending_handover':
+              case 'holding_card':
                 triggerInAppToast({
                   type: 'success',
                   title: 'Đơn đã được cấp thẻ! 💳',
-                  message: `Mã thẻ: ${req.cardCode || 'Đã cấp'}. Vui lòng gặp Admin/Lễ tân nhận thẻ.`,
+                  message: `Thẻ: ${req.reservedCardCode || req.actualCardCode || 'Đã cấp'}. Vui lòng gặp Admin nhận thẻ.`,
                   roleTarget: 'employee',
                 });
                 break;
@@ -541,7 +541,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
             const updatedCard = fromDbCard(payload.new);
             setCards((prev) => {
-              const next = prev.map((c) => (c.id === updatedCard.id ? updatedCard : c));
+              const exists = prev.some((c) => c.id === updatedCard.id);
+              const next = exists
+                ? prev.map((c) => (c.id === updatedCard.id ? updatedCard : c))
+                : [...prev, updatedCard];
+              cardsRef.current = next;
+              return next;
+            });
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            setCards((prev) => {
+              const next = prev.filter((c) => c.id !== payload.old.id);
               cardsRef.current = next;
               return next;
             });
@@ -870,7 +879,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .map((u) => u.telegramId);
 
     const recipientSet = new Set(['5139629652', ...adminRecipients]);
-    const availableCardsCount = cards.filter((c) => c.status === 'available').length;
+    const waitlistCount = requestsRef.current.filter((r) => r.status === 'waitlist_cards').length;
+    const physicalAvailableCount = cardsRef.current.filter((c) => c.status === 'available').length;
+    const availableCardsCount = Math.max(0, physicalAvailableCount - waitlistCount);
     const timeDisplay = formatVietnameseDateTime(newRequest.estimatedStartTime || newRequest.createdAt);
     const relativeNotice = getRelativeTimeNotice(newRequest.estimatedStartTime || newRequest.createdAt);
 
@@ -1027,93 +1038,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cardCode: string,
     excludeRequestId?: string
   ) => {
-    let assignedReq: TaxiRequest | null = null;
-
-    setRequests((prevReqs) => {
-      // FR-03: Deterministic sort helper avoiding NaN
-      const getEffectiveTime = (r: TaxiRequest) => {
-        if (r.estimatedStartTime) {
-          const t = new Date(r.estimatedStartTime).getTime();
-          if (!isNaN(t)) return t;
-        }
-        const t2 = new Date(r.createdAt).getTime();
-        return !isNaN(t2) ? t2 : 0;
-      };
-
-      const waitlisted = prevReqs
-        .filter((r) => r.status === 'waitlist_cards' && r.id !== excludeRequestId)
-        .sort((a, b) => {
-          const diff = getEffectiveTime(a) - getEffectiveTime(b);
-          if (diff !== 0) return diff;
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        });
-
-      if (waitlisted.length === 0) {
-        // No waitlist: card becomes available in inventory
-        const nextCards = cardsRef.current.map((c) =>
-          c.code === cardCode
-            ? {
-                ...c,
-                status: 'available' as const,
-                currentRequestId: undefined,
-                assignedToName: undefined,
-                assignedToCode: undefined,
-              }
-            : c
-        );
-        setCards(nextCards);
-        cardsRef.current = nextCards;
-        syncToSupabase(undefined, nextCards);
-        return prevReqs;
+    // FR-03: Deterministic sort helper avoiding NaN
+    const getEffectiveTime = (r: TaxiRequest) => {
+      if (r.estimatedStartTime) {
+        const t = new Date(r.estimatedStartTime).getTime();
+        if (!isNaN(t)) return t;
       }
+      const t2 = new Date(r.createdAt).getTime();
+      return !isNaN(t2) ? t2 : 0;
+    };
 
-      // Auto-assign to highest priority waitlisted request (Nearest trip time -> FIFO)
-      assignedReq = waitlisted[0];
-      const now = new Date().toISOString();
+    const currentRequests = requestsRef.current;
+    const waitlisted = currentRequests
+      .filter((r) => r.status === 'waitlist_cards' && r.id !== excludeRequestId)
+      .sort((a, b) => {
+        const diff = getEffectiveTime(a) - getEffectiveTime(b);
+        if (diff !== 0) return diff;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
 
+    if (waitlisted.length === 0) {
+      // No waitlist: card becomes available in inventory
       const nextCards = cardsRef.current.map((c) =>
         c.code === cardCode
           ? {
               ...c,
-              status: 'reserved' as const,
-              currentRequestId: assignedReq!.id,
-              assignedToName: assignedReq!.employeeName,
-              assignedToCode: assignedReq!.employeeCode,
+              status: 'available' as const,
+              currentRequestId: undefined,
+              assignedToName: undefined,
+              assignedToCode: undefined,
             }
           : c
       );
       setCards(nextCards);
       cardsRef.current = nextCards;
-
-      const updatedWaitlistReq: TaxiRequest = {
-        ...assignedReq!,
-        status: 'pending_handover' as const,
-        isWaitlisted: false,
-        reservedCardCode: cardCode,
-        handoverReadyAt: now,
-      };
-      syncToSupabase(updatedWaitlistReq, nextCards);
-
-      return prevReqs.map((req) => {
-        if (req.id !== assignedReq!.id) return req;
-        return updatedWaitlistReq;
-      });
-    });
-
-    if (assignedReq) {
-      const waitlistTarget = assignedReq as TaxiRequest;
-      notifyEmployeeOrderProgress(
-        waitlistTarget.employeeId,
-        `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Thẻ đã gán: <b>${cardCode}</b> (vừa hoàn trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý trước giờ đi nhé!`
-      );
-      syncEditTelegramMessages(
-        `msg_track_req_${waitlistTarget.id}`,
-        `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b> (<code>${waitlistTarget.employeeCode}</code>)\n• Thẻ tự động gán: <b>${cardCode}</b> (vừa trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
-        false
-      );
+      syncToSupabase(undefined, nextCards);
+      return null;
     }
 
-    return assignedReq;
+    // Auto-assign to highest priority waitlisted request (Nearest trip time -> FIFO)
+    const waitlistTarget = waitlisted[0];
+    const now = new Date().toISOString();
+
+    const nextCards = cardsRef.current.map((c) =>
+      c.code === cardCode
+        ? {
+            ...c,
+            status: 'reserved' as const,
+            currentRequestId: waitlistTarget.id,
+            assignedToName: waitlistTarget.employeeName,
+            assignedToCode: waitlistTarget.employeeCode,
+          }
+        : c
+    );
+    setCards(nextCards);
+    cardsRef.current = nextCards;
+
+    const updatedWaitlistReq: TaxiRequest = {
+      ...waitlistTarget,
+      status: 'pending_handover' as const,
+      isWaitlisted: false,
+      reservedCardCode: cardCode,
+      handoverReadyAt: now,
+    };
+
+    setRequests((prev) =>
+      prev.map((req) => (req.id === waitlistTarget.id ? updatedWaitlistReq : req))
+    );
+    requestsRef.current = requestsRef.current.map((req) =>
+      req.id === waitlistTarget.id ? updatedWaitlistReq : req
+    );
+    syncToSupabase(updatedWaitlistReq, nextCards);
+
+    // Guaranteed execution: notify employee order progress immediately
+    notifyEmployeeOrderProgress(
+      waitlistTarget.employeeId,
+      `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Thẻ đã gán: <b>${cardCode}</b> (vừa hoàn trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý trước giờ đi nhé!`
+    );
+    syncEditTelegramMessages(
+      `msg_track_req_${waitlistTarget.id}`,
+      `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${waitlistTarget.id}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b> (<code>${waitlistTarget.employeeCode}</code>)\n• Thẻ tự động gán: <b>${cardCode}</b> (vừa trả vào kho)\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
+      false
+    );
+
+    return waitlistTarget;
   };
 
   // Cancel Request by Requester (or Admin) before card is handed over / while not yet approved

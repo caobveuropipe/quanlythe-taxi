@@ -93,7 +93,9 @@ export const EmployeeRegisterViewMinimal: React.FC<EmployeeRegisterViewMinimalPr
       ['pending_leader', 'pending_admin', 'waitlist_cards', 'pending_handover', 'holding_card'].includes(r.status)
   );
 
-  const availableCardsCount = cards.filter((c) => c.status === 'available').length;
+  const waitlistCount = requests.filter((r) => r.status === 'waitlist_cards').length;
+  const physicalAvailableCount = cards.filter((c) => c.status === 'available').length;
+  const availableCardsCount = Math.max(0, physicalAvailableCount - waitlistCount);
   const isOutOfCards = availableCardsCount === 0;
 
   // Preset handlers

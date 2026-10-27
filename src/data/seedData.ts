@@ -39,41 +39,6 @@ export const INITIAL_CARDS: TaxiCard[] = [
     condition: 'good',
     note: 'Thẻ Vinasun VIP',
   },
-  {
-    id: 'card-02',
-    code: 'TAXI-02',
-    status: 'available',
-    condition: 'good',
-    note: 'Thẻ vật lý Vinasun VIP',
-  },
-  {
-    id: 'card-03',
-    code: 'TAXI-03',
-    status: 'available',
-    condition: 'good',
-    note: 'Thẻ Taxi Group',
-  },
-  {
-    id: 'card-04',
-    code: 'TAXI-04',
-    status: 'available',
-    condition: 'good',
-    note: 'Thẻ Taxi Group',
-  },
-  {
-    id: 'card-05',
-    code: 'TAXI-05',
-    status: 'available',
-    condition: 'good',
-    note: 'Thẻ Mai Linh Taxi',
-  },
-  {
-    id: 'card-06',
-    code: 'TAXI-06',
-    status: 'available',
-    condition: 'good',
-    note: 'Thẻ Mai Linh Taxi',
-  },
 ];
 
 export const INITIAL_REQUESTS: TaxiRequest[] = [];
