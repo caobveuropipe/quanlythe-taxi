@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
-import { TaxiCard, TaxiRequest, UserProfile } from '../types';
+import { TaxiCard, TaxiRequest, UserProfile, AppAnnouncement, AppConfig } from '../types';
 
 // Convert DB snake_case row to TypeScript camelCase UserProfile
 export const fromDbUser = (row: any): UserProfile => ({
@@ -258,7 +258,9 @@ export const supabaseService = {
         .neq('role', 'system')
         .order('name', { ascending: true });
       if (error || !data) return null;
-      return data.filter((u) => u.role !== 'system' && !u.id.startsWith('msg_track_')).map(fromDbUser);
+      return data
+        .filter((u) => u.role !== 'system' && !u.id.startsWith('msg_track_') && !u.id.startsWith('app_config_'))
+        .map(fromDbUser);
     } catch {
       return null;
     }
@@ -294,5 +296,37 @@ export const supabaseService = {
         (payload) => onUpdate(payload)
       )
       .subscribe();
+  },
+
+  // Fetch app announcement / config from remote DB
+  async getAppConfig(): Promise<Partial<AppConfig> | null> {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', 'app_config_announcement')
+        .maybeSingle();
+      if (error || !data || !data.telegram_username) return null;
+      const announcement = JSON.parse(data.telegram_username);
+      return { announcement };
+    } catch {
+      return null;
+    }
+  },
+
+  // Upsert app announcement to remote DB
+  async upsertAppAnnouncement(announcement: AppAnnouncement) {
+    try {
+      await supabase.from('users').upsert({
+        id: 'app_config_announcement',
+        name: 'Cấu hình thông báo',
+        code: 'APP_CONFIG',
+        department: 'system',
+        role: 'system',
+        telegram_username: JSON.stringify(announcement),
+      });
+    } catch (e) {
+      console.warn('Supabase upsertAppAnnouncement error:', e);
+    }
   },
 };

@@ -512,6 +512,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await supabaseService.upsertRequests(INITIAL_REQUESTS);
         }
 
+        // Load app config & announcement from Supabase
+        const remoteConfig = await supabaseService.getAppConfig();
+        if (remoteConfig?.announcement) {
+          setConfig((prev) => ({
+            ...prev,
+            announcement: remoteConfig.announcement,
+          }));
+        }
+
         // Realtime updates: requests
         requestChannel = supabaseService.subscribeToRequests((payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
@@ -539,9 +548,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
-        // Realtime updates: users
+        // Realtime updates: users & system announcement
         userChannel = supabaseService.subscribeToUsers((payload) => {
           if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+            // Realtime sync for system announcement
+            if (payload.new.id === 'app_config_announcement') {
+              try {
+                if (payload.new.telegram_username) {
+                  const remoteAnnouncement = JSON.parse(payload.new.telegram_username);
+                  setConfig((prev) => ({
+                    ...prev,
+                    announcement: remoteAnnouncement,
+                  }));
+                }
+              } catch (err) {
+                console.warn('Realtime announcement parse error:', err);
+              }
+              return;
+            }
+
+            if (payload.new.role === 'system' || payload.new.id?.startsWith('msg_track_')) {
+              return;
+            }
+
             const updatedUser = fromDbUser(payload.new);
             const currentList = usersRef.current;
             const exists = currentList.some((u) => u.id === updatedUser.id);
@@ -551,6 +580,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             applyUsersDelta(newList);
           } else if (payload.eventType === 'DELETE' && payload.old) {
             const targetId = payload.old.id;
+            if (targetId === 'app_config_announcement' || targetId?.startsWith('msg_track_')) {
+              return;
+            }
             const filtered = usersRef.current.filter((u) => u.id !== targetId);
             setUsers(filtered);
             usersRef.current = filtered;
@@ -597,10 +629,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchFreshData = useCallback(async () => {
     if (supabaseStatus !== 'connected') return;
     try {
-      const [remoteRequests, remoteUsers, remoteCards] = await Promise.all([
+      const [remoteRequests, remoteUsers, remoteCards, remoteConfig] = await Promise.all([
         supabaseService.getRequests(),
         supabaseService.getUsers(),
         supabaseService.getCards(),
+        supabaseService.getAppConfig(),
       ]);
 
       if (remoteRequests && remoteRequests.length > 0) {
@@ -622,6 +655,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteCards && remoteCards.length > 0) {
         setCards(remoteCards);
         cardsRef.current = remoteCards;
+      }
+      if (remoteConfig?.announcement) {
+        setConfig((prev) => {
+          if (JSON.stringify(prev.announcement) !== JSON.stringify(remoteConfig.announcement)) {
+            return { ...prev, announcement: remoteConfig.announcement };
+          }
+          return prev;
+        });
       }
     } catch (err) {
       // Background poll silent fallback
@@ -659,6 +700,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateConfig = (newConfig: Partial<AppConfig>) => {
     setConfig((prev) => ({ ...prev, ...newConfig }));
+    if (newConfig.announcement) {
+      supabaseService.upsertAppAnnouncement(newConfig.announcement).catch((err) => {
+        console.warn('Supabase upsertAppAnnouncement error:', err);
+      });
+    }
   };
 
   // Helper: Secure proxy to send Telegram messages via /api/telegram (no bot token exposed to frontend)

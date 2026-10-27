@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { UserRole, AnnouncementRoleTarget, AnnouncementType, AppAnnouncement } from '../../types';
 import {
@@ -61,6 +61,24 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
     currentAnnouncement?.type ?? 'info'
   );
   const [showPreviewPopup, setShowPreviewPopup] = useState<boolean>(false);
+
+  // Synchronize form inputs if announcement is updated remotely from another device (e.g. Phone <-> PC)
+  useEffect(() => {
+    if (config.announcement) {
+      setAnnouncementEnabled(config.announcement.enabled ?? false);
+      if (config.announcement.title !== undefined) setAnnouncementTitle(config.announcement.title);
+      if (config.announcement.content !== undefined) setAnnouncementContent(config.announcement.content);
+      if (config.announcement.targetRole !== undefined) setAnnouncementTargetRole(config.announcement.targetRole);
+      if (config.announcement.type !== undefined) setAnnouncementType(config.announcement.type);
+    }
+  }, [
+    config.announcement?.updatedAt,
+    config.announcement?.enabled,
+    config.announcement?.title,
+    config.announcement?.content,
+    config.announcement?.targetRole,
+    config.announcement?.type,
+  ]);
 
   const handleSaveAnnouncement = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
