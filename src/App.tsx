@@ -13,6 +13,7 @@ import { AdminWebPortalStandbyView } from './components/admin/AdminWebPortalStan
 import { UserOnboardingView } from './components/auth/UserOnboardingView';
 import { AdminUserApprovalModal } from './components/admin/AdminUserApprovalModal';
 import { AdminUserManagementView } from './components/admin/AdminUserManagementView';
+import { AnnouncementPopup } from './components/common/AnnouncementPopup';
 import {
   FilePlus,
   ListFilter,
@@ -52,11 +53,39 @@ const MainAppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('register');
   const [subView, setSubView] = useState<'settings' | 'web_portal' | 'user_management' | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
+  const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
     currentUser.role === 'admin_hr' ||
     currentUser.role === 'hr';
+
+  const announcement = config.announcement;
+
+  // Tự động mở popup thông báo ngay khi vào app nếu vai trò khớp
+  useEffect(() => {
+    if (!announcement || !announcement.enabled) {
+      setShowAnnouncement(false);
+      return;
+    }
+
+    const target = announcement.targetRole || 'all';
+    let isTargetMatch = false;
+
+    if (target === 'all') {
+      isTargetMatch = true;
+    } else if (target === 'admin') {
+      isTargetMatch = isAdminOrHR;
+    } else if (target === 'user') {
+      isTargetMatch = !isAdminOrHR;
+    }
+
+    if (isTargetMatch) {
+      setShowAnnouncement(true);
+    } else {
+      setShowAnnouncement(false);
+    }
+  }, [currentUser.id, announcement?.updatedAt, announcement?.enabled, announcement?.targetRole, isAdminOrHR]);
 
   const isLeader =
     (currentUser.role === 'leader' || currentUser.isLeader) &&
@@ -112,6 +141,16 @@ const MainAppContent: React.FC = () => {
             isOpen={showApprovalModal}
             onClose={() => setShowApprovalModal(false)}
           />
+
+          {/* Broadcast Announcement Popup on app enter */}
+          {announcement && (
+            <AnnouncementPopup
+              announcement={announcement}
+              isOpen={showAnnouncement}
+              onClose={() => setShowAnnouncement(false)}
+              durationSeconds={8}
+            />
+          )}
 
           {/* If current user is pending registration or rejected: ONLY show Onboarding view */}
           {isPendingOrRejected ? (

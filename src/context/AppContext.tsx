@@ -22,6 +22,7 @@ import {
 } from '../types';
 import {
   INITIAL_CONFIG,
+  INITIAL_ANNOUNCEMENT,
   INITIAL_USERS,
   INITIAL_LEADER_MAPPINGS,
   INITIAL_CARDS,
@@ -149,7 +150,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [config, setConfig] = useState<AppConfig>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_config`);
-    return saved ? JSON.parse(saved) : INITIAL_CONFIG;
+    if (saved) {
+      try {
+        const parsed: AppConfig = JSON.parse(saved);
+        return {
+          ...INITIAL_CONFIG,
+          ...parsed,
+          announcement: parsed.announcement || INITIAL_ANNOUNCEMENT,
+        };
+      } catch {}
+    }
+    return INITIAL_CONFIG;
   });
 
   const [cards, setCards] = useState<TaxiCard[]>(() => {

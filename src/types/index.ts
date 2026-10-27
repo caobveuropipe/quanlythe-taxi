@@ -146,7 +146,22 @@ export interface DepartmentLeaderMapping {
   botActive: boolean;
 }
 
+export type AnnouncementRoleTarget = 'all' | 'user' | 'admin';
+export type AnnouncementType = 'info' | 'warning' | 'success' | 'urgent';
+
+export interface AppAnnouncement {
+  enabled: boolean;
+  title: string;
+  content: string;
+  targetRole: AnnouncementRoleTarget;
+  type?: AnnouncementType;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface AppConfig {
   requireLeaderApproval: boolean;
   maxSpendPerTrip: number; // Default 500,000 VND
+  announcement?: AppAnnouncement;
 }
+

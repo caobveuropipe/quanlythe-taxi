@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UserRole } from '../../types';
+import { UserRole, AnnouncementRoleTarget, AnnouncementType, AppAnnouncement } from '../../types';
 import {
   ToggleLeft,
   ToggleRight,
@@ -13,8 +13,16 @@ import {
   Send,
   HelpCircle,
   Key,
+  Megaphone,
+  Eye,
+  Save,
+  Bell,
+  BellOff,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
+import { AnnouncementPopup } from '../common/AnnouncementPopup';
 import {
   getCustomGeminiKey,
   maskApiKey,
@@ -33,6 +41,62 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrKeyTick, setOcrKeyTick] = useState(0);
+
+  // Announcement state
+  const currentAnnouncement = config.announcement;
+  const [announcementEnabled, setAnnouncementEnabled] = useState<boolean>(
+    currentAnnouncement?.enabled ?? false
+  );
+  const [announcementTitle, setAnnouncementTitle] = useState<string>(
+    currentAnnouncement?.title ?? 'Thông báo quy định mượn thẻ Taxi'
+  );
+  const [announcementContent, setAnnouncementContent] = useState<string>(
+    currentAnnouncement?.content ??
+      'Nhân sự vui lòng gửi yêu cầu trước giờ khởi hành tối thiểu 30 phút. Sau chuyến đi, chụp ảnh hóa đơn rõ nét và hoàn trả thẻ trong vòng 24h để hoàn tất thủ tục quyết toán.'
+  );
+  const [announcementTargetRole, setAnnouncementTargetRole] = useState<AnnouncementRoleTarget>(
+    currentAnnouncement?.targetRole ?? 'all'
+  );
+  const [announcementType, setAnnouncementType] = useState<AnnouncementType>(
+    currentAnnouncement?.type ?? 'info'
+  );
+  const [showPreviewPopup, setShowPreviewPopup] = useState<boolean>(false);
+
+  const handleSaveAnnouncement = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const updatedAnnouncement: AppAnnouncement = {
+      enabled: announcementEnabled,
+      title: announcementTitle.trim() || 'Thông báo hệ thống',
+      content: announcementContent.trim(),
+      targetRole: announcementTargetRole,
+      type: announcementType,
+      updatedAt: new Date().toISOString(),
+    };
+    updateConfig({ announcement: updatedAnnouncement });
+    const targetLabel =
+      announcementTargetRole === 'all'
+        ? 'Tất cả người dùng (All)'
+        : announcementTargetRole === 'admin'
+        ? 'Quản trị viên (Admin)'
+        : 'Nhân sự / Người dùng (User)';
+    setSaveFeedback(
+      `Đã cập nhật thông báo Popup! (${announcementEnabled ? 'Đang BẬT' : 'Đang TẮT'}, Đối tượng: ${targetLabel})`
+    );
+  };
+
+  const handleDisableAnnouncement = () => {
+    setAnnouncementEnabled(false);
+    const updatedAnnouncement: AppAnnouncement = {
+      enabled: false,
+      title: announcementTitle.trim() || 'Thông báo hệ thống',
+      content: announcementContent.trim(),
+      targetRole: announcementTargetRole,
+      type: announcementType,
+      updatedAt: new Date().toISOString(),
+    };
+    updateConfig({ announcement: updatedAnnouncement });
+    setSaveFeedback('Đã vô hiệu hóa thông báo Popup! Popup sẽ không còn hiển thị khi người dùng mở Mini App.');
+  };
 
   const customKey = getCustomGeminiKey();
   const systemUsage = getDailySystemUsageCount();
@@ -252,7 +316,270 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
         />
       )}
 
-      {/* 5. Danh sách tài khoản & Phân quyền */}
+      {/* 5. Cấu hình Thông báo Popup khi vào Mini App */}
+      <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3.5">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 rounded">
+              <Megaphone className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>Thông báo Popup khi vào Mini App</span>
+                <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 font-mono text-[9px] font-bold rounded">
+                  8 Giây Auto-close
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Hiển thị popup tự đóng sau 8s (có nút close) ngay khi mở ứng dụng
+              </p>
+            </div>
+          </div>
+
+          {/* Toggle Bật/Tắt */}
+          <button
+            type="button"
+            onClick={() => setAnnouncementEnabled(!announcementEnabled)}
+            className={`p-1 transition-colors ${
+              announcementEnabled ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'
+            }`}
+            title={announcementEnabled ? 'Nhấn để Tắt thông báo' : 'Nhấn để Bật thông báo'}
+          >
+            {announcementEnabled ? (
+              <ToggleRight className="w-9 h-9" />
+            ) : (
+              <ToggleLeft className="w-9 h-9" />
+            )}
+          </button>
+        </div>
+
+        {/* Trạng thái Bật/Tắt */}
+        <div className={`p-2.5 rounded border text-xs flex items-center justify-between gap-2 ${
+          announcementEnabled
+            ? 'bg-indigo-50/70 border-indigo-200 text-indigo-900 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-200'
+            : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-slate-800/40 dark:border-slate-800 dark:text-slate-400'
+        }`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${announcementEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+            <span className="font-medium text-[11px]">
+              {announcementEnabled
+                ? 'Thông báo đang KÍCH HOẠT: Người dùng thuộc vai trò đã chọn sẽ thấy popup khi vào app.'
+                : 'Thông báo đang VÔ HIỆU HÓA: Popup sẽ không hiển thị khi người dùng mở app.'}
+            </span>
+          </div>
+
+          {announcementEnabled && (
+            <button
+              type="button"
+              onClick={handleDisableAnnouncement}
+              className="px-2 py-0.5 text-[10px] font-bold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 dark:text-rose-200 border border-rose-300 dark:border-rose-800 rounded shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+              title="Vô hiệu hóa thông báo ngay lập tức"
+            >
+              <BellOff className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+              <span>Tắt nhanh</span>
+            </button>
+          )}
+        </div>
+
+        {/* Chọn Role nhận thông báo: all / user / admin */}
+        <div className="space-y-1.5">
+          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+            Chọn đối tượng nhận thông báo (Role Target):
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setAnnouncementTargetRole('all')}
+              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                announcementTargetRole === 'all'
+                  ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Users className={`w-3.5 h-3.5 ${announcementTargetRole === 'all' ? 'text-blue-600' : 'text-slate-400'}`} />
+                <span className="font-bold text-xs">Tất cả (All)</span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                Toàn bộ người dùng
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAnnouncementTargetRole('user')}
+              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                announcementTargetRole === 'user'
+                  ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Users className={`w-3.5 h-3.5 ${announcementTargetRole === 'user' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span className="font-bold text-xs">Nhân sự (User)</span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                Nhân viên & Leader
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAnnouncementTargetRole('admin')}
+              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                announcementTargetRole === 'admin'
+                  ? 'bg-purple-50 border-purple-500 text-purple-900 ring-1 ring-purple-500 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Shield className={`w-3.5 h-3.5 ${announcementTargetRole === 'admin' ? 'text-purple-600' : 'text-slate-400'}`} />
+                <span className="font-bold text-xs">Admin</span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                Quản trị viên & HR
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Kiểu / Mức độ thông báo */}
+        <div className="space-y-1.5">
+          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+            Kiểu hiển thị (Màu sắc & Biểu tượng):
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            {[
+              { id: 'info', label: 'Thông tin', icon: 'ℹ️', color: 'blue' },
+              { id: 'warning', label: 'Lưu ý', icon: '⚠️', color: 'amber' },
+              { id: 'success', label: 'Tin mới', icon: '✅', color: 'emerald' },
+              { id: 'urgent', label: 'Khẩn cấp', icon: '🚨', color: 'rose' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setAnnouncementType(item.id as AnnouncementType)}
+                className={`py-1.5 px-2 rounded border text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  announcementType === item.id
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Form nhập Tiêu đề & Nội dung */}
+        <div className="space-y-2">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Tiêu đề thông báo:
+            </label>
+            <input
+              type="text"
+              value={announcementTitle}
+              onChange={(e) => setAnnouncementTitle(e.target.value)}
+              placeholder="VD: Thông báo cập nhật quy định mượn thẻ Taxi..."
+              className="w-full text-xs font-semibold p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white focus:outline-hidden focus:border-indigo-500 focus:bg-white"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                Nội dung chi tiết:
+              </label>
+              <span className="text-[10px] text-slate-400">
+                {announcementContent.length} ký tự
+              </span>
+            </div>
+            <textarea
+              rows={4}
+              value={announcementContent}
+              onChange={(e) => setAnnouncementContent(e.target.value)}
+              placeholder="Nhập nội dung thông báo hiển thị cho người dùng khi vào app..."
+              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-white leading-relaxed focus:outline-hidden focus:border-indigo-500 focus:bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Action Buttons: Xem trước, Vô hiệu hóa & Lưu cấu hình */}
+        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPreviewPopup(true)}
+            className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-300 dark:border-slate-600"
+          >
+            <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Xem trước Popup (8s)</span>
+          </button>
+
+          {announcementEnabled ? (
+            <button
+              type="button"
+              onClick={handleDisableAnnouncement}
+              className="py-2 px-3.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 text-xs font-semibold rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="Vô hiệu hóa thông báo, tắt popup ngay lập tức"
+            >
+              <BellOff className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>Vô hiệu hóa thông báo</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAnnouncementEnabled(true);
+                const updatedAnnouncement: AppAnnouncement = {
+                  enabled: true,
+                  title: announcementTitle.trim() || 'Thông báo hệ thống',
+                  content: announcementContent.trim(),
+                  targetRole: announcementTargetRole,
+                  type: announcementType,
+                  updatedAt: new Date().toISOString(),
+                };
+                updateConfig({ announcement: updatedAnnouncement });
+                setSaveFeedback('Đã kích hoạt lại thông báo Popup!');
+              }}
+              className="py-2 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-xs font-semibold rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Bật thông báo</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSaveAnnouncement}
+            className="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{announcementEnabled ? 'Lưu thay đổi' : 'Lưu & Bật popup'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Popup Xem trước khi Admin bấm test */}
+      {showPreviewPopup && (
+        <AnnouncementPopup
+          isOpen={showPreviewPopup}
+          onClose={() => setShowPreviewPopup(false)}
+          durationSeconds={8}
+          previewMode={true}
+          announcement={{
+            enabled: announcementEnabled,
+            title: announcementTitle.trim() || 'Thông báo hệ thống',
+            content: announcementContent.trim() || 'Nội dung thông báo mẫu hiển thị khi người dùng vào app.',
+            targetRole: announcementTargetRole,
+            type: announcementType,
+            updatedAt: new Date().toISOString(),
+          }}
+        />
+      )}
+
+      {/* 6. Danh sách tài khoản & Phân quyền */}
       <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
