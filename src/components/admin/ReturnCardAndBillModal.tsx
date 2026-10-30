@@ -18,12 +18,8 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { scanTaxiReceipt } from '../../services/geminiOcrService';
-import {
-  getCustomGeminiKey,
-  getDailySystemUsageCount,
-  MAX_DAILY_SYSTEM_OCR_LIMIT,
-} from '../../utils/geminiKeyStorage';
+import { scanTaxiReceipt, getSystemOcrStatus } from '../../services/geminiOcrService';
+import { getCustomGeminiKey } from '../../utils/geminiKeyStorage';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
 
 interface ReturnCardAndBillModalProps {
@@ -59,6 +55,8 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const [ocrMessage, setOcrMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [keyUpdateTick, setKeyUpdateTick] = useState(0);
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  React.useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
 
   const maxSpend = config.maxSpendPerTrip;
   const costNum = isCostMissing ? 0 : parseInt(actualCostStr.replace(/\D/g, ''), 10) || 0;
@@ -66,8 +64,6 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const overBudgetAmount = isOverBudget ? costNum - maxSpend : 0;
 
   const currentCustomKey = getCustomGeminiKey();
-  const systemUsage = getDailySystemUsageCount();
-  const remainingSystemUsage = Math.max(0, MAX_DAILY_SYSTEM_OCR_LIMIT - systemUsage);
 
   // Hàm quét ảnh hóa đơn bằng OCR
   const executeOcrScan = async (fileOrUrl: File | string) => {
@@ -75,7 +71,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
     setOcrMessage(null);
 
     try {
-      const res = await scanTaxiReceipt(fileOrUrl, currentUser.code);
+      const res = await scanTaxiReceipt(fileOrUrl);
 
       if (res.success && res.data) {
         let fieldsUpdated = 0;
@@ -292,11 +288,11 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300'
                       : 'bg-white text-slate-600 border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 hover:border-blue-400'
                   }`}
-                  title="Cài đặt API Key cá nhân để quét không giới hạn"
+                  title="Key cá nhân tùy chọn; mặc định dùng Key hệ thống"
                 >
                   <Key className="w-3 h-3" />
                   <span>
-                    {currentCustomKey ? 'Key riêng' : `Key chung (${remainingSystemUsage}/20)`}
+                    {currentCustomKey ? 'Key riêng' : systemOcrConfigured === false ? 'OCR chưa cấu hình' : 'Key hệ thống'}
                   </span>
                 </button>
 

@@ -1,4 +1,7 @@
-import type { IncomingMessage, ServerResponse } from 'http';
+import { createClient } from '@supabase/supabase-js';
+import { createHash } from 'crypto';
+import { verifyTelegramInitData } from '../server/ocrAuth';
+import { reserveSystemOcrCall } from '../server/ocrQuota';
 
 // Cache đơn giản theo hash ảnh trong bộ nhớ serverless (tối đa 100 ảnh gần nhất)
 interface CachedResult {
@@ -8,32 +11,15 @@ interface CachedResult {
 const ocrCache = new Map<string, CachedResult>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 giờ
 
-// Giám sát rate limit cục bộ (chống quá 12 requests / phút cho system key)
-const requestTimestamps: number[] = [];
-const MAX_REQUESTS_PER_MINUTE = 12;
-
-function cleanOldTimestamps() {
-  const now = Date.now();
-  while (requestTimestamps.length > 0 && now - requestTimestamps[0] > 60000) {
-    requestTimestamps.shift();
-  }
-}
-
 // Băm chuỗi đơn giản để làm cache key
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < Math.min(str.length, 5000); i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return String(hash) + '_' + str.length;
+function receiptCacheKey(image: string, key: string): string {
+  return createHash('sha256').update(key).update(':').update(image).digest('hex');
 }
 
 export default async function handler(req: any, res: any) {
   // Thiết lập CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-custom-gemini-key'
@@ -42,6 +28,10 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
+  }
+
+  if (req.method === 'GET') {
+    return res.status(200).json({ configured: Boolean(process.env.GEMINI_API_KEY && process.env.TELEGRAM_BOT_TOKEN && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VITE_SUPABASE_URL) });
   }
 
   if (req.method !== 'POST') {
@@ -58,17 +48,36 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const { imageBase64, mimeType = 'image/jpeg', customApiKey, employeeCode } = body || {};
+    const { imageBase64, mimeType = 'image/jpeg', customApiKey, telegramInitData } = body || {};
 
-    if (!imageBase64) {
-      return res.status(400).json({ success: false, message: 'Thiếu dữ liệu ảnh (imageBase64)' });
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const telegramId = botToken ? verifyTelegramInitData(telegramInitData, botToken) : null;
+    if (!telegramId) {
+      return res.status(401).json({ success: false, message: 'Vui lòng mở Mini App từ Telegram để quét hóa đơn.' });
+    }
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) {
+      return res.status(503).json({ success: false, message: 'Máy chủ OCR chưa được cấu hình quyền truy cập dữ liệu.' });
+    }
+    const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    const { data: operators, error: operatorError } = await db.from('users').select('role').eq('telegram_id', telegramId).limit(1);
+    if (operatorError) {
+      return res.status(503).json({ success: false, message: 'Không thể xác thực quyền quét OCR lúc này.' });
+    }
+    if (!['admin', 'admin_hr', 'hr'].includes(operators?.[0]?.role)) {
+      return res.status(403).json({ success: false, message: 'Tài khoản Telegram chưa có quyền quét hóa đơn.' });
+    }
+
+    if (typeof imageBase64 !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(imageBase64) || imageBase64.length > 5_000_000 || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+      return res.status(400).json({ success: false, message: 'Ảnh OCR không hợp lệ hoặc quá lớn.' });
     }
 
     // Xác định Key sử dụng: Ưu tiên Custom Key của Admin, nếu không thì dùng System Key
-    const isCustomKey = Boolean(customApiKey && customApiKey.trim().length > 10);
+    const isCustomKey = typeof customApiKey === 'string' && customApiKey.trim().length > 10;
     const activeApiKey = isCustomKey
       ? customApiKey.trim()
-      : process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+      : process.env.GEMINI_API_KEY;
 
     if (!activeApiKey) {
       return res.status(500).json({
@@ -78,7 +87,7 @@ export default async function handler(req: any, res: any) {
     }
 
     // Kiểm tra Cache trước
-    const cacheKey = simpleHash(imageBase64);
+    const cacheKey = receiptCacheKey(imageBase64, activeApiKey);
     const cached = ocrCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return res.status(200).json({
@@ -87,20 +96,6 @@ export default async function handler(req: any, res: any) {
         source: isCustomKey ? 'custom' : 'system',
         cached: true,
       });
-    }
-
-    // Nếu dùng System Key: Kiểm tra Rate Limit tức thời (12 RPM)
-    if (!isCustomKey) {
-      cleanOldTimestamps();
-      if (requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
-        return res.status(429).json({
-          success: false,
-          code: 'RATE_LIMIT_EXCEEDED',
-          message:
-            'Hệ thống đang phục vụ nhiều lượt quét cùng lúc. Vui lòng đợi 15-30 giây hoặc sử dụng Key cá nhân của bạn.',
-        });
-      }
-      requestTimestamps.push(Date.now());
     }
 
     // Chuẩn bị payload gọi Google Generative Language API
@@ -139,12 +134,23 @@ BẮT BUỘC trả về DUY NHẤT một chuỗi JSON thuần túy (không kèm 
       },
     };
 
-    // Thử model gemini-3-flash-preview trước, nếu lỗi thì fallback sang gemini-flash-latest / gemini-2.5-flash-lite
-    const candidateModels = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+    // Một model cố định giúp giới hạn lượt gọi theo đúng quota của project.
+    const candidateModels = [process.env.OCR_GEMINI_MODEL || 'gemini-2.5-flash-lite'];
     let lastError: any = null;
     let rawText = '';
 
     for (const model of candidateModels) {
+      if (!isCustomKey) {
+        try {
+          const quota = await reserveSystemOcrCall();
+          if (!quota.allowed) {
+            res.setHeader('Retry-After', String(quota.retryAfter));
+            return res.status(429).json({ success: false, code: 'RATE_LIMIT_EXCEEDED', message: `Key hệ thống đang đạt giới hạn lượt gọi. Vui lòng thử lại sau ${quota.retryAfter} giây.` });
+          }
+        } catch {
+          return res.status(503).json({ success: false, message: 'Bộ giới hạn OCR chưa sẵn sàng. Vui lòng thử lại sau.' });
+        }
+      }
       const googleApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeApiKey}`;
       try {
         const response = await fetch(googleApiUrl, {
@@ -159,8 +165,7 @@ BẮT BUỘC trả về DUY NHẤT một chuỗi JSON thuần túy (không kèm 
           return res.status(429).json({
             success: false,
             code: 'GOOGLE_QUOTA_EXCEEDED',
-            message:
-              'Hạn mức gọi miễn phí của Google đang tạm chạm trần (15 lượt/phút). Vui lòng đợi 30 giây hoặc sử dụng Key riêng của bạn.',
+            message: 'Gemini đang đạt hạn mức của project. Vui lòng thử lại sau hoặc dùng Key riêng.',
           });
         }
 

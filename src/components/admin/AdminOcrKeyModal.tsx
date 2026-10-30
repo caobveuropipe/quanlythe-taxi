@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Key,
@@ -14,10 +14,8 @@ import {
   setCustomGeminiKey,
   removeCustomGeminiKey,
   maskApiKey,
-  getDailySystemUsageCount,
-  MAX_DAILY_SYSTEM_OCR_LIMIT,
 } from '../../utils/geminiKeyStorage';
-import { testGeminiApiKey } from '../../services/geminiOcrService';
+import { getSystemOcrStatus, testGeminiApiKey } from '../../services/geminiOcrService';
 
 interface AdminOcrKeyModalProps {
   onClose: () => void;
@@ -25,13 +23,13 @@ interface AdminOcrKeyModalProps {
 }
 
 export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onKeyUpdated }) => {
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
   const currentKey = getCustomGeminiKey();
   const [inputKey, setInputKey] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  const systemUsage = getDailySystemUsageCount();
-  const remainingSystemUsage = Math.max(0, MAX_DAILY_SYSTEM_OCR_LIMIT - systemUsage);
 
   const handleTest = async () => {
     const keyToTest = inputKey.trim() || currentKey;
@@ -100,7 +98,7 @@ export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onK
               </span>
             ) : (
               <span className="px-2 py-0.5 font-semibold text-[10px] bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300">
-                ⚡ Key Hệ Thống dùng chung
+                {systemOcrConfigured === false ? '⚠️ OCR hệ thống chưa cấu hình' : '⚡ Key Hệ Thống dùng chung'}
               </span>
             )}
           </div>
@@ -121,10 +119,8 @@ export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onK
             </div>
           ) : (
             <div className="text-[11px] text-slate-600 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-700 flex justify-between">
-              <span>Hạn mức hôm nay của bạn:</span>
-              <span className="font-bold text-slate-900 dark:text-slate-100">
-                {remainingSystemUsage} / {MAX_DAILY_SYSTEM_OCR_LIMIT} lượt
-              </span>
+              <span>Giới hạn Key hệ thống:</span>
+              <span className="font-bold text-slate-900 dark:text-slate-100">Theo phút tại máy chủ</span>
             </div>
           )}
         </div>
@@ -154,7 +150,7 @@ export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onK
             className="w-full text-xs font-mono p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500 rounded"
           />
           <p className="text-[10px] text-slate-400">
-            * Key chỉ lưu trữ an toàn trong trình duyệt của bạn, không gửi lên máy chủ chung.
+            * Key lưu trên trình duyệt và được gửi tới máy chủ OCR khi quét; máy chủ dùng key để gọi Gemini.
           </p>
         </div>
 

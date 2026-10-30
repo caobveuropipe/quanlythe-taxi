@@ -22,12 +22,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
+import { getSystemOcrStatus } from '../../services/geminiOcrService';
 import { AnnouncementPopup } from '../common/AnnouncementPopup';
 import {
   getCustomGeminiKey,
   maskApiKey,
-  getDailySystemUsageCount,
-  MAX_DAILY_SYSTEM_OCR_LIMIT,
 } from '../../utils/geminiKeyStorage';
 
 interface AdminSettingsViewProps {
@@ -35,6 +34,8 @@ interface AdminSettingsViewProps {
 }
 
 export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUserManagement }) => {
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
   const { config, updateConfig, users, leaderMappings, cards, updateUserProfile } = useApp();
 
   const [maxSpendInput, setMaxSpendInput] = useState<string>(String(config.maxSpendPerTrip));
@@ -117,8 +118,6 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
   };
 
   const customKey = getCustomGeminiKey();
-  const systemUsage = getDailySystemUsageCount();
-  const remainingQuota = Math.max(0, MAX_DAILY_SYSTEM_OCR_LIMIT - systemUsage);
 
   const handleRoleChange = async (userId: string, userName: string, newRole: UserRole) => {
     const isLeader = newRole === 'leader' || newRole === 'admin_hr';
@@ -307,13 +306,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
               </span>
             ) : (
               <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 rounded">
-                ⚡ Key Hệ Thống dùng chung (Còn {remainingQuota}/20 lượt hôm nay)
+                {systemOcrConfigured === false ? '⚠️ OCR hệ thống chưa cấu hình' : '⚡ Key hệ thống dùng chung (giới hạn theo phút tại máy chủ)'}
               </span>
             )}
           </div>
 
           <div className="text-[11px] text-slate-500">
-            Hệ thống hỗ trợ Admin tự nhập API Key cá nhân để quét hóa đơn taxi không giới hạn lượt gọi và không phụ thuộc vào hạn mức dùng chung.
+            Key cá nhân là tùy chọn. Khi không nhập, OCR dùng Key hệ thống với giới hạn lượt gọi theo phút.
           </div>
 
           <button

@@ -15,6 +15,9 @@ View your app in AI Studio: https://ai.studio/apps/e1fb1401-afc3-4888-b5e8-f661c
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+2. Add `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`, and `VITE_SUPABASE_URL` to the server environment. Never use a `VITE_` prefix for the Gemini or service role key.
+3. Run [the OCR quota migration](supabase/migrations/20261030_system_ocr_rate_limit.sql) once in Supabase SQL Editor.
+4. Set `OCR_SYSTEM_RPM` to a value below the active RPM limit for `OCR_GEMINI_MODEL` in Google AI Studio. The defaults are 10 and `gemini-2.5-flash-lite`. The quota is global across Vercel instances and counts each call to Gemini, not each button click.
+5. Deploy to Vercel with these environment variables in **Production**, then redeploy. OCR is available to Admin/HR accounts when the Mini App is opened through Telegram. The local Vite server alone does not serve `/api/ocr`; use `vercel dev` for a local end-to-end check.
+
+The personal Gemini key is optional. If entered, it is stored in that browser and sent to `/api/ocr` for the scan. The backend uses it instead of the system key. A previously deployed `VITE_GEMINI_API_KEY` should be removed from Vercel and its Gemini key rotated because it may have been bundled into public JavaScript.
