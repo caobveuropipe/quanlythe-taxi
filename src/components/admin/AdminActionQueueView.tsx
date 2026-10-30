@@ -157,17 +157,17 @@ export const AdminActionQueueView: React.FC = () => {
   const totalTodoCount = totalDispatchCount + totalCollectCount;
 
   // Actions with anti-double-click locking
-  const handleAdminApprove = (req: TaxiRequest) => {
+  const handleAdminApprove = async (req: TaxiRequest) => {
     if (actionLoadingIds[req.id]) return;
     setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
     setFeedback(null);
     try {
-      const res = adminApprove(req.id);
+      const res = await adminApprove(req.id);
       setFeedback(res);
+    } catch (err: any) {
+      setFeedback({ success: false, message: err?.message || 'Lỗi khi duyệt cấp thẻ' });
     } finally {
-      setTimeout(() => {
-        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
-      }, 800);
+      setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
     }
   };
 
@@ -204,7 +204,7 @@ export const AdminActionQueueView: React.FC = () => {
     }
   };
 
-  const handleAssignFromWaitlist = (req: TaxiRequest) => {
+  const handleAssignFromWaitlist = async (req: TaxiRequest) => {
     if (actionLoadingIds[req.id]) return;
     const cardCode = waitlistAssignCode[req.id] || availableCards[0]?.code;
     if (!cardCode) {
@@ -212,17 +212,18 @@ export const AdminActionQueueView: React.FC = () => {
       return;
     }
     setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
+    setFeedback(null);
     try {
-      const res = assignCardFromWaitlist(req.id, cardCode);
+      const res = await assignCardFromWaitlist(req.id, cardCode);
       setFeedback(res);
+    } catch (err: any) {
+      setFeedback({ success: false, message: err?.message || 'Lỗi khi gán thẻ từ hàng chờ' });
     } finally {
-      setTimeout(() => {
-        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
-      }, 800);
+      setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
     }
   };
 
-  const handleConfirmHandover = (req: TaxiRequest) => {
+  const handleConfirmHandover = async (req: TaxiRequest) => {
     if (actionLoadingIds[req.id]) return;
     const cardCode = handoverCardCode[req.id] || req.reservedCardCode || availableCards[0]?.code;
     if (!cardCode) {
@@ -230,13 +231,14 @@ export const AdminActionQueueView: React.FC = () => {
       return;
     }
     setActionLoadingIds((prev) => ({ ...prev, [req.id]: true }));
+    setFeedback(null);
     try {
-      const res = confirmHandover(req.id, cardCode, currentUser.name);
+      const res = await confirmHandover(req.id, cardCode, currentUser.name);
       setFeedback(res);
+    } catch (err: any) {
+      setFeedback({ success: false, message: err?.message || 'Lỗi khi bàn giao thẻ' });
     } finally {
-      setTimeout(() => {
-        setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
-      }, 800);
+      setActionLoadingIds((prev) => ({ ...prev, [req.id]: false }));
     }
   };
 

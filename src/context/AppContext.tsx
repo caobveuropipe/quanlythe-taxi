@@ -57,7 +57,7 @@ interface AppContextType {
   triggerInAppToast: (toast: Omit<InAppToastMessage, 'id' | 'timestamp'>) => void;
 
   // Business Actions
-  createRequest: (purpose: string, destination: string, clientTag?: string, estimatedStartTime?: string) => { success: boolean; message: string; requestId?: string };
+  createRequest: (purpose: string, destination: string, clientTag?: string, estimatedStartTime?: string) => Promise<{ success: boolean; message: string; requestId?: string }>;
   directDispatchCard: (params: {
     cardCode: string;
     recipientName: string;
@@ -67,17 +67,17 @@ interface AppContextType {
     destination?: string;
     clientTag?: string;
   }) => { success: boolean; message: string; requestId?: string };
-  cancelRequest: (requestId: string, reason?: string) => { success: boolean; message: string };
+  cancelRequest: (requestId: string, reason?: string) => Promise<{ success: boolean; message: string }>;
   leaderApprove: (requestId: string, comment?: string) => { success: boolean; message: string };
   leaderReject: (requestId: string, reason: string) => { success: boolean; message: string };
   leaderUndoReject: (requestId: string) => { success: boolean; message: string };
-  adminApprove: (requestId: string, comment?: string) => { success: boolean; message: string };
+  adminApprove: (requestId: string, comment?: string) => Promise<{ success: boolean; message: string }>;
   adminReject: (requestId: string, reason: string) => { success: boolean; message: string };
   adminForwardToLeader: (requestId: string) => { success: boolean; message: string };
-  assignCardFromWaitlist: (requestId: string, cardCode: string) => { success: boolean; message: string };
-  confirmHandover: (requestId: string, actualCardCode: string, operatorName: string) => { success: boolean; message: string };
-  releaseReservedCard: (requestId: string, reason: string, operatorName: string) => { success: boolean; message: string };
-  releaseCardDirectly: (cardId: string, reason?: string) => { success: boolean; message: string };
+  assignCardFromWaitlist: (requestId: string, cardCode: string) => Promise<{ success: boolean; message: string }>;
+  confirmHandover: (requestId: string, actualCardCode: string, operatorName: string) => Promise<{ success: boolean; message: string }>;
+  releaseReservedCard: (requestId: string, reason: string, operatorName: string) => Promise<{ success: boolean; message: string }>;
+  releaseCardDirectly: (cardId: string, reason?: string) => Promise<{ success: boolean; message: string }>;
   requestYieldCard: (requestId: string, reason?: string, operatorName?: string) => { success: boolean; message: string };
   respondYieldCard: (requestId: string, accepted: boolean) => { success: boolean; message: string };
   confirmReturnAndBilling: (params: {
@@ -271,7 +271,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (myUpdatedProfile) {
       const roleChanged = myUpdatedProfile.role !== prevMe.role;
-      const statusChanged = myUpdatedProfile.status !== prevMe.status;
+      const statusChanged = false;
       const isApprovedNow =
         (prevMe.role === 'pending' || prevMe.role === 'unregistered') &&
         (myUpdatedProfile.role === 'employee' ||
@@ -369,11 +369,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   roleTarget: 'employee',
                 });
                 break;
-              case 'in_use':
+              case 'holding_card':
                 triggerInAppToast({
                   type: 'info',
                   title: 'Thẻ đang được sử dụng 🚗',
-                  message: `Thẻ ${req.cardCode || ''} đã bàn giao. Chúc bạn có chuyến đi an toàn!`,
+                  description: 'Thẻ ' + (req.actualCardCode || '') + ' đã bàn giao. Chúc bạn có chuyến đi an toàn!',
                   roleTarget: 'employee',
                 });
                 break;
@@ -381,20 +381,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 triggerInAppToast({
                   type: 'success',
                   title: 'Chuyến đi hoàn tất ✅',
-                  message: `Chi phí: ${req.actualCost ? Number(req.actualCost).toLocaleString('vi-VN') + 'đ' : '0đ'}. Cảm ơn bạn!`,
+                  description: 'Chi phí: ' + (req.tripDetails?.actualCost ? Number(req.tripDetails.actualCost).toLocaleString('vi-VN') + 'đ' : '0đ') + '. Cảm ơn bạn!',
                   roleTarget: 'employee',
                 });
                 break;
-              case 'rejected':
+              case 'rejected_leader':
+              case 'rejected_admin':
                 triggerInAppToast({
                   type: 'error',
                   title: 'Đơn mượn thẻ bị từ chối ❌',
-                  message: req.rejectReason ? `Lý do: ${req.rejectReason}` : 'Vui lòng kiểm tra lại thông tin đơn.',
+                  description: (req.adminApprovalComment || req.leaderApprovalComment) ? 'Lý do: ' + (req.adminApprovalComment || req.leaderApprovalComment) : 'Vui lòng kiểm tra lại thông tin đơn.',
                   roleTarget: 'employee',
                 });
                 break;
               case 'waitlist_cards':
-              case 'queued':
                 triggerInAppToast({
                   type: 'warning',
                   title: 'Đơn vào hàng chờ ⏳',
@@ -772,13 +772,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (meta?.telegram_username) {
         const tracked: Array<{ chatId: string | number; messageId: number }> = JSON.parse(meta.telegram_username);
-        await Promise.all(
+        const editResults = await Promise.all(
           tracked.map((m) =>
-            secureEditTelegramMessage(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => {})
+            secureEditTelegramMessage(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => null)
           )
         );
         if (!keepTracker) {
-          await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+          const allSucceeded = editResults.every((r) => r && r.ok === true);
+          if (allSucceeded) {
+            try {
+              await supabase.from('users').delete().eq('id', trackId);
+            } catch (err) {
+              console.warn('Error deleting message tracker:', err);
+            }
+          }
         }
       }
     } catch (e) {
@@ -818,7 +825,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // 1. Create Request
-  const createRequest = (purpose: string, destination: string, clientTag?: string, estimatedStartTime?: string) => {
+  const createRequest = async (purpose: string, destination: string, clientTag?: string, estimatedStartTime?: string): Promise<{ success: boolean; message: string; requestId?: string }> => {
     if (!purpose.trim()) {
       return { success: false, message: 'Vui lòng nhập mục đích sử dụng thẻ.' };
     }
@@ -902,31 +909,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const trackedMessages: Array<{ chatId: string | number; messageId: number }> = [];
-      (async () => {
-        for (const adminId of Array.from(recipientSet)) {
-          if (adminId && adminId.trim()) {
-            try {
-              const json = await secureSendTelegramMessage(adminId, orderText, orderReplyMarkup);
-              if (json?.ok && json.result?.message_id) {
-                trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
-              }
-            } catch (err) {
-              console.warn('Notify admin order error for:', adminId, err);
+      for (const adminId of Array.from(recipientSet)) {
+        if (adminId && adminId.trim()) {
+          try {
+            const json = await secureSendTelegramMessage(adminId, orderText, orderReplyMarkup);
+            if (json?.ok && json.result?.message_id) {
+              trackedMessages.push({ chatId: json.result.chat.id, messageId: json.result.message_id });
             }
+          } catch (err) {
+            console.warn('Notify admin order error for:', adminId, err);
           }
         }
+      }
 
-        if (trackedMessages.length > 0) {
-          await supabase.from('users').upsert({
-            id: `msg_track_req_${newReqId}`,
-            name: 'Tracker',
-            code: 'MSG_META',
-            department: 'system',
-            role: 'system',
-            telegram_username: JSON.stringify(trackedMessages),
-          });
-        }
-      })();
+      if (trackedMessages.length > 0) {
+        await supabase.from('users').upsert({
+          id: `msg_track_req_${newReqId}`,
+          name: 'Tracker',
+          code: 'MSG_META',
+          department: 'system',
+          role: 'system',
+          telegram_username: JSON.stringify(trackedMessages),
+        });
+      }
     } catch (err) {
       console.warn('Telegram notify order error:', err);
     }
@@ -1124,8 +1129,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return waitlistTarget;
   };
 
-  // Cancel Request by Requester (or Admin) before card is handed over / while not yet approved
-  const cancelRequest = (requestId: string, reason?: string) => {
+  // Cancel Request by Requester (or Admin) via atomic RPC
+  const cancelRequest = async (requestId: string, reason?: string): Promise<{ success: boolean; message: string }> => {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
@@ -1133,23 +1138,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Thẻ đã được bàn giao hoặc chuyến đi đã thực hiện, không thể tự hủy theo cách này.' };
     }
 
-    // Auto-assign or release card if exists
-    if (target.reservedCardCode) {
-      autoAssignCardIfWaitlisted(target.reservedCardCode, requestId);
+    const res = await supabaseService.cancelRequestAtomic(requestId, reason || 'Người tạo chủ động hủy yêu cầu', currentUser.id);
+    if (!res.success) {
+      return { success: false, message: res.message || 'Lỗi hủy yêu cầu' };
     }
 
-    const updatedReq: TaxiRequest = {
-      ...target,
-      status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-      cancelledReason: reason?.trim() || 'Người tạo chủ động hủy yêu cầu khi chưa được duyệt/cấp.',
-    };
+    const autoAssignedTo = res.data?.auto_assigned_to;
+    const cardCode = res.data?.card_code;
 
     setRequests((prev) =>
-      prev.map((req) => (req.id === requestId ? updatedReq : req))
+      prev.map((req) => {
+        if (req.id === requestId) {
+          return {
+            ...req,
+            status: 'cancelled',
+            cancelledAt: new Date().toISOString(),
+            cancelledReason: reason?.trim() || 'Người tạo chủ động hủy yêu cầu.',
+            reservedCardCode: undefined,
+          };
+        }
+        if (autoAssignedTo && req.id === autoAssignedTo) {
+          return {
+            ...req,
+            status: 'pending_handover',
+            isWaitlisted: false,
+            reservedCardCode: cardCode,
+          };
+        }
+        return req;
+      })
     );
-    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
-    syncToSupabase(updatedReq);
+
+    if (cardCode) {
+      setCards((prev) =>
+        prev.map((c) => {
+          if (c.code === cardCode) {
+            return autoAssignedTo
+              ? { ...c, status: 'reserved' as const, currentRequestId: autoAssignedTo }
+              : { ...c, status: 'available' as const, currentRequestId: undefined };
+          }
+          return c;
+        })
+      );
+    }
+
+    if (autoAssignedTo && cardCode) {
+      const waitlistTarget = requests.find((r) => r.id === autoAssignedTo);
+      if (waitlistTarget) {
+        notifyEmployeeOrderProgress(
+          waitlistTarget.employeeId,
+          `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Thẻ đã gán: <b>${cardCode}</b> (tự động chuyển từ đơn hủy)\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý nhé!`
+        );
+        syncEditTelegramMessages(
+          `msg_track_req_${autoAssignedTo}`,
+          `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b>\n• Thẻ tự động gán: <b>${cardCode}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
+          true
+        );
+      }
+    }
 
     syncEditTelegramMessages(
       `msg_track_req_${requestId}`,
@@ -1228,14 +1274,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (adminTrackedMsgs.length > 0) {
-          await supabase.from('users').upsert({
-            id: `msg_track_req_${requestId}`,
-            name: 'Tracker',
-            code: 'MSG_META',
-            department: 'system',
-            role: 'system',
-            telegram_username: JSON.stringify(adminTrackedMsgs),
-          }).catch(() => {});
+          try {
+            const { data: existingTrackMeta } = await supabase
+              .from('users')
+              .select('telegram_username')
+              .eq('id', `msg_track_req_${requestId}`)
+              .maybeSingle();
+
+            let combinedTracked = [...adminTrackedMsgs];
+            if (existingTrackMeta?.telegram_username) {
+              const oldTracked = JSON.parse(existingTrackMeta.telegram_username);
+              for (const oldM of oldTracked) {
+                if (!combinedTracked.some((c) => String(c.chatId) === String(oldM.chatId) && Number(c.messageId) === Number(oldM.messageId))) {
+                  combinedTracked.push(oldM);
+                }
+              }
+            }
+
+            await supabase.from('users').upsert({
+              id: `msg_track_req_${requestId}`,
+              name: 'Tracker',
+              code: 'MSG_META',
+              department: 'system',
+              role: 'system',
+              telegram_username: JSON.stringify(combinedTracked),
+            });
+          } catch (err) {
+            console.warn('Error saving merged leader approve tracker:', err);
+          }
         }
       } catch (e) {
         console.warn('Error notifying admins after leader approve:', e);
@@ -1385,93 +1451,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // 4. Admin Approve
-  const adminApprove = (requestId: string, comment?: string) => {
+  // 4. Admin Approve via atomic RPC
+  const adminApprove = async (requestId: string, comment?: string): Promise<{ success: boolean; message: string }> => {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    // Check available physical cards in inventory
-    const availableCard = cards.find((c) => c.status === 'available');
+    const res = await supabaseService.assignCardAtomic(requestId, undefined, currentUser.id, false);
+    if (!res.success) {
+      return { success: false, message: res.message || 'Lỗi duyệt cấp thẻ' };
+    }
 
-    if (availableCard) {
-      // Reserve card
-      const nextCards = cardsRef.current.map((c) =>
-        c.id === availableCard.id
-          ? {
-              ...c,
-              status: 'reserved' as const,
-              currentRequestId: requestId,
-              assignedToName: target.employeeName,
-              assignedToCode: target.employeeCode,
-            }
-          : c
+    const result = res.data?.result;
+    const assignedCode = res.data?.card_code;
+    const operatorName = res.data?.operator_name || currentUser.name;
+
+    if (result === 'already_processed') {
+      return { success: true, message: 'Yêu cầu đã được xử lý trước đó.' };
+    }
+
+    if (result === 'assigned_new' || result === 'assigned_existing') {
+      setCards((prev) =>
+        prev.map((c) =>
+          c.code === assignedCode
+            ? { ...c, status: 'reserved' as const, currentRequestId: requestId }
+            : c
+        )
       );
-      setCards(nextCards);
-      cardsRef.current = nextCards;
-
-      const now = new Date().toISOString();
-      const updatedReq: TaxiRequest = {
-        ...target,
-        adminApprovalStatus: 'approved',
-        adminApprovalComment: comment?.trim() || 'Admin đã duyệt.',
-        adminApprovedAt: now,
-        adminApproverName: currentUser.name,
-        isWaitlisted: false,
-        reservedCardCode: availableCard.code,
-        handoverReadyAt: now, // FR-01: Ghi nhận mốc sẵn sàng nhận thẻ
-        status: 'pending_handover',
-      };
-
       setRequests((prev) =>
-        prev.map((req) => (req.id === requestId ? updatedReq : req))
+        prev.map((req) =>
+          req.id === requestId
+            ? {
+                ...req,
+                status: 'pending_handover',
+                isWaitlisted: false,
+                reservedCardCode: assignedCode,
+                adminApprovalStatus: 'approved',
+                adminApprovedAt: new Date().toISOString(),
+                adminApproverName: operatorName,
+              }
+            : req
+        )
       );
-      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
-      syncToSupabase(updatedReq, nextCards);
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
-        `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`
+        `✅ <b>ĐÃ ĐƯỢC DUYỆT CẤP THẺ BỞI ${operatorName}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Thẻ giữ dự kiến: <b>${assignedCode}</b>\n• Người duyệt: <b>${operatorName} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`,
+        true
       );
 
-      // Thông báo cho nhân viên biết đã được duyệt cấp thẻ
       notifyEmployeeOrderProgress(
         target.employeeId,
-        `🎉 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT CẤP THẺ!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến gặp Admin tại quầy Hành chính để nhận thẻ trước giờ khởi hành!`
+        `🎉 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT CẤP THẺ!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ giữ dự kiến: <b>${assignedCode}</b>\n• Người duyệt: Admin <b>${operatorName}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến gặp Admin tại quầy Hành chính để nhận thẻ trước giờ khởi hành!`
       );
 
       return {
         success: true,
-        message: `Admin đã duyệt! Đã giữ thẻ dự kiến ${availableCard.code} cho yêu cầu này.`,
+        message: `Admin đã duyệt! Đã giữ thẻ dự kiến ${assignedCode} cho yêu cầu này.`,
       };
-    } else {
-      // Out of cards -> Enter Waitlist
-      const now = new Date().toISOString();
-      const updatedReq: TaxiRequest = {
-        ...target,
-        adminApprovalStatus: 'approved',
-        adminApprovalComment: comment?.trim() || 'Admin đã duyệt (chờ thẻ vào kho).',
-        adminApprovedAt: now,
-        adminApproverName: currentUser.name,
-        isWaitlisted: true,
-        status: 'waitlist_cards',
-      };
+    }
 
+    if (result === 'waitlisted') {
       setRequests((prev) =>
-        prev.map((req) => (req.id === requestId ? updatedReq : req))
+        prev.map((req) =>
+          req.id === requestId
+            ? {
+                ...req,
+                status: 'waitlist_cards',
+                isWaitlisted: true,
+                reservedCardCode: undefined,
+                adminApprovalStatus: 'approved',
+                adminApprovedAt: new Date().toISOString(),
+                adminApproverName: operatorName,
+              }
+            : req
+        )
       );
-      requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
-      syncToSupabase(updatedReq);
 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
-        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`,
+        `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${operatorName}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${operatorName} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`,
         true
       );
 
-      // Thông báo cho nhân viên biết đơn đã duyệt và đang chờ thẻ
       notifyEmployeeOrderProgress(
         target.employeeId,
-        `⏳ <b>YÊU CẦU ĐÃ ĐƯỢC DUYỆT (ĐANG CHỜ THẺ TRỐNG)</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người duyệt: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Hàng chờ cấp bù thẻ</b>\n\nDo kho thẻ hiện đang bận, đơn của bạn được xếp vào danh sách ưu tiên. Hệ thống sẽ tự động gán thẻ và gửi thông báo cho bạn ngay khi có thẻ hoàn trả về quầy!`
+        `⏳ <b>YÊU CẦU ĐÃ ĐƯỢC DUYỆT (ĐANG CHỜ THẺ TRỐNG)</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người duyệt: Admin <b>${operatorName}</b>\n• Trạng thái: <b>Hàng chờ cấp bù thẻ</b>\n\nDo kho thẻ hiện đang bận, đơn của bạn được xếp vào danh sách ưu tiên. Hệ thống sẽ tự động gán thẻ và gửi thông báo cho bạn ngay khi có thẻ hoàn trả về quầy!`
       );
 
       return {
@@ -1479,6 +1543,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: 'Admin đã duyệt, nhưng kho hiện hết thẻ sẵn sàng. Yêu cầu đã đưa vào danh sách chờ thẻ.',
       };
     }
+
+    return { success: true, message: 'Đã hoàn tất thao tác duyệt.' };
   };
 
   // 5. Admin Reject
@@ -1580,134 +1646,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // 6. Assign Card from Waitlist (Admin/HR actively picks who gets card)
-  const assignCardFromWaitlist = (requestId: string, cardCode: string) => {
-    const card = cards.find((c) => c.code === cardCode && c.status === 'available');
-    if (!card) {
-      return { success: false, message: `Thẻ ${cardCode} hiện không ở trạng thái sẵn sàng trong kho.` };
-    }
-
+  // 6. Assign Card from Waitlist via atomic RPC
+  const assignCardFromWaitlist = async (requestId: string, cardCode: string): Promise<{ success: boolean; message: string }> => {
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    // Reserve card
-    const nextCards = cards.map((c) =>
-      c.id === card.id
-        ? {
-            ...c,
-            status: 'reserved' as const,
-            currentRequestId: requestId,
-            assignedToName: targetReq.employeeName,
-            assignedToCode: targetReq.employeeCode,
-          }
-        : c
-    );
-    setCards(nextCards);
-
-    const updatedReq: TaxiRequest = {
-      ...targetReq,
-      isWaitlisted: false,
-      reservedCardCode: cardCode,
-      status: 'pending_handover',
-    };
-
-    setRequests((prev) =>
-      prev.map((req) => (req.id === requestId ? updatedReq : req))
-    );
-    syncToSupabase(updatedReq, nextCards);
-
-    // Thông báo cho nhân viên biết đã được cấp thẻ từ hàng chờ
-    notifyEmployeeOrderProgress(
-      targetReq.employeeId,
-      `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ được cấp: <b>${cardCode}</b>\n• Người cấp: Admin <b>${currentUser.name}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ nhé!`
-    );
-
-    // Cập nhật tin nhắn Telegram của Admin và gỡ toàn bộ nút bấm
-    syncEditTelegramMessages(
-      `msg_track_req_${requestId}`,
-      `✅ <b>ĐÃ CẤP THẺ TỪ HÀNG CHỜ BỞI ${currentUser.name}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ được cấp: <b>${cardCode}</b>\n• Người cấp: <b>${currentUser.name} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`,
-      false
-    );
-
-    return {
-      success: true,
-      message: `Đã cấp thẻ ${cardCode} cho ${targetReq.employeeName}. Chuyển sang chờ bàn giao.`,
-    };
-  };
-
-  // 7. Confirm Handover
-  const confirmHandover = (requestId: string, actualCardCode: string, operatorName: string) => {
-    const targetCard = cards.find((c) => c.code === actualCardCode);
-    if (!targetCard) return { success: false, message: 'Không tìm thấy mã thẻ này trong hệ thống.' };
-
-    if (targetCard.status === 'in_use') {
-      return { success: false, message: `Thẻ ${actualCardCode} đang được sử dụng ở một lượt khác!` };
-    }
-    if (targetCard.status === 'damaged' || targetCard.status === 'lost') {
-      return { success: false, message: `Thẻ ${actualCardCode} đang ở tình trạng ${targetCard.status === 'lost' ? 'Mất' : 'Hỏng/tạm khóa'}, không thể bàn giao!` };
+    const res = await supabaseService.assignCardAtomic(requestId, cardCode, currentUser.id, false);
+    if (!res.success) {
+      return { success: false, message: res.message || `Thẻ ${cardCode} hiện không thể cấp.` };
     }
 
-    const targetReq = requests.find((r) => r.id === requestId);
-    if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
+    const assignedCode = res.data?.card_code || cardCode;
+    const operatorName = res.data?.operator_name || currentUser.name;
 
-    let nextCards = [...cards];
-    // If previously another card was reserved, release it if different
-    if (targetReq.reservedCardCode && targetReq.reservedCardCode !== actualCardCode) {
-      nextCards = nextCards.map((c) =>
-        c.code === targetReq.reservedCardCode && c.status === 'reserved'
-          ? { ...c, status: 'available' as const, currentRequestId: undefined, assignedToName: undefined }
+    setCards((prev) =>
+      prev.map((c) =>
+        c.code === assignedCode
+          ? { ...c, status: 'reserved' as const, currentRequestId: requestId }
           : c
-      );
-    }
-
-    // Set target card as in_use
-    nextCards = nextCards.map((c) =>
-      c.code === actualCardCode
-        ? {
-            ...c,
-            status: 'in_use' as const,
-            currentRequestId: requestId,
-            assignedToName: targetReq.employeeName,
-            assignedToCode: targetReq.employeeCode,
-          }
-        : c
+      )
     );
-    setCards(nextCards);
-
-    const updatedReq: TaxiRequest = {
-      ...targetReq,
-      actualCardCode: actualCardCode,
-      handedOverBy: operatorName,
-      handedOverAt: new Date().toISOString(),
-      status: 'holding_card',
-    };
 
     setRequests((prev) =>
-      prev.map((req) => (req.id === requestId ? updatedReq : req))
+      prev.map((req) =>
+        req.id === requestId
+          ? { ...req, status: 'pending_handover', isWaitlisted: false, reservedCardCode: assignedCode }
+          : req
+      )
     );
-    syncToSupabase(updatedReq, nextCards);
 
-    // Thông báo cho nhân viên biết đã nhận thẻ thành công
     notifyEmployeeOrderProgress(
       targetReq.employeeId,
-      `🔑 <b>BẠN ĐÃ NHẬN THẺ TAXI THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ đang giữ: <b>${actualCardCode}</b>\n• Người bàn giao: <b>${operatorName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>\n\n👉 Chúc bạn có chuyến đi thuận lợi! Bạn nhớ giữ hóa đơn/cuống vé và hoàn trả thẻ cho Admin sau khi về nhé.`
+      `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ được cấp: <b>${assignedCode}</b>\n• Người cấp: Admin <b>${operatorName}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ nhé!`
     );
 
-    // Cập nhật tin nhắn Telegram của Admin sang trạng thái đang giữ thẻ
     syncEditTelegramMessages(
       `msg_track_req_${requestId}`,
-      `🔑 <b>ĐÃ BÀN GIAO THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ đang giữ: <b>${actualCardCode}</b>\n• Người bàn giao: <b>${operatorName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>`,
-      false
+      `✅ <b>ĐÃ CẤP THẺ TỪ HÀNG CHỜ BỞI ${operatorName}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ được cấp: <b>${assignedCode}</b>\n• Người cấp: <b>${operatorName} (qua Mini App)</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`,
+      true
     );
 
     return {
       success: true,
-      message: `Đã xác nhận bàn giao thẻ ${actualCardCode} cho ${targetReq.employeeName}.`,
+      message: `Đã cấp thẻ ${assignedCode} cho ${targetReq.employeeName}. Chuyển sang chờ bàn giao.`,
     };
   };
 
-  // 8. Release Reserved Card
-  const releaseReservedCard = (requestId: string, reason: string, operatorName: string) => {
+  // 7. Confirm Handover via atomic RPC
+  const confirmHandover = async (requestId: string, actualCardCode: string, operatorName: string): Promise<{ success: boolean; message: string }> => {
+    const targetReq = requests.find((r) => r.id === requestId);
+    if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
+
+    const res = await supabaseService.assignCardAtomic(requestId, actualCardCode, currentUser.id, true);
+    if (!res.success) {
+      return { success: false, message: res.message || 'Lỗi bàn giao thẻ' };
+    }
+
+    const assignedCode = res.data?.card_code || actualCardCode;
+    const currentOpName = res.data?.operator_name || operatorName;
+
+    setCards((prev) =>
+      prev.map((c) =>
+        c.code === assignedCode
+          ? { ...c, status: 'in_use' as const, currentRequestId: requestId }
+          : c.currentRequestId === requestId && c.code !== assignedCode && c.status === 'reserved'
+          ? { ...c, status: 'available' as const, currentRequestId: undefined }
+          : c
+      )
+    );
+
+    const now = new Date().toISOString();
+    setRequests((prev) =>
+      prev.map((req) =>
+        req.id === requestId
+          ? { ...req, status: 'holding_card', actualCardCode: assignedCode, handedOverBy: currentOpName, handedOverAt: now }
+          : req
+      )
+    );
+
+    notifyEmployeeOrderProgress(
+      targetReq.employeeId,
+      `🔑 <b>BẠN ĐÃ NHẬN THẺ TAXI THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Thẻ đang giữ: <b>${assignedCode}</b>\n• Người bàn giao: <b>${currentOpName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>\n\n👉 Chúc bạn có chuyến đi thuận lợi! Bạn nhớ giữ hóa đơn/cuống vé và hoàn trả thẻ cho Admin sau khi về nhé.`
+    );
+
+    syncEditTelegramMessages(
+      `msg_track_req_${requestId}`,
+      `🔑 <b>ĐÃ BÀN GIAO THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b> (<code>${targetReq.employeeCode}</code>)\n• Thẻ đang giữ: <b>${assignedCode}</b>\n• Người bàn giao: <b>${currentOpName}</b>\n• Trạng thái: <b>Đang sử dụng thẻ</b>`,
+      true
+    );
+
+    return {
+      success: true,
+      message: `Đã xác nhận bàn giao thẻ ${assignedCode} cho ${targetReq.employeeName}.`,
+    };
+  };
+
+  // 8. Release Reserved Card via atomic RPC
+  const releaseReservedCard = async (requestId: string, reason: string, operatorName: string): Promise<{ success: boolean; message: string }> => {
     if (!reason.trim()) {
       return { success: false, message: 'Vui lòng nhập lý do giải phóng thẻ đã giữ.' };
     }
@@ -1715,33 +1750,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    // Tìm và giải phóng TẤT CẢ các thẻ đang liên kết với yêu cầu này (xử lý triệt để cả khi nhiều thẻ bị kẹt)
-    const cardsToRelease = cardsRef.current.filter(
-      (c) => c.currentRequestId === requestId || c.code === targetReq.reservedCardCode
-    );
+    const res = await supabaseService.releaseCardAtomic(requestId, undefined, reason, currentUser.id, 'release_reservation');
+    if (!res.success) {
+      return { success: false, message: res.message || 'Lỗi giải phóng thẻ' };
+    }
 
-    cardsToRelease.forEach((c) => {
-      autoAssignCardIfWaitlisted(c.code, requestId);
-    });
-
-    const updatedReq: TaxiRequest = {
-      ...targetReq,
-      status: 'card_released',
-      releasedReason: reason.trim(),
-      releasedBy: operatorName,
-      releasedAt: new Date().toISOString(),
-      reservedCardCode: undefined,
-    };
+    const autoAssignedTo = res.data?.auto_assigned_to;
+    const cardCode = res.data?.card_code;
 
     setRequests((prev) =>
-      prev.map((req) => (req.id === requestId ? updatedReq : req))
+      prev.map((req) => {
+        if (req.id === requestId) {
+          return {
+            ...req,
+            status: 'card_released',
+            releasedReason: reason.trim(),
+            releasedBy: operatorName,
+            releasedAt: new Date().toISOString(),
+            reservedCardCode: undefined,
+          };
+        }
+        if (autoAssignedTo && req.id === autoAssignedTo) {
+          return {
+            ...req,
+            status: 'pending_handover',
+            isWaitlisted: false,
+            reservedCardCode: cardCode,
+          };
+        }
+        return req;
+      })
     );
-    requestsRef.current = requestsRef.current.map((req) => (req.id === requestId ? updatedReq : req));
-    syncToSupabase(updatedReq, cardsRef.current);
+
+    if (cardCode) {
+      setCards((prev) =>
+        prev.map((c) => {
+          if (c.code === cardCode) {
+            return autoAssignedTo
+              ? { ...c, status: 'reserved' as const, currentRequestId: autoAssignedTo }
+              : { ...c, status: 'available' as const, currentRequestId: undefined };
+          }
+          return c;
+        })
+      );
+    }
+
+    if (autoAssignedTo && cardCode) {
+      const waitlistTarget = requests.find((r) => r.id === autoAssignedTo);
+      if (waitlistTarget) {
+        notifyEmployeeOrderProgress(
+          waitlistTarget.employeeId,
+          `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Thẻ đã gán: <b>${cardCode}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý nhé!`
+        );
+        syncEditTelegramMessages(
+          `msg_track_req_${autoAssignedTo}`,
+          `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b>\n• Thẻ tự động gán: <b>${cardCode}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
+          true
+        );
+      }
+    }
 
     syncEditTelegramMessages(
       `msg_track_req_${requestId}`,
-      `⚠️ <b>THẺ ĐÃ GIỮ ĐÃ BỊ GIẢI PHÓNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${targetReq.employeeName}</b>\n• Người thực hiện: <b>${operatorName}</b>\n• Lý do: <i>${reason.trim()}</i>`,
+      `⚠️ <b>THẺ ĐÃ GIỮ ĐÃ BỊ GIẢI PHÓNG!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người thực hiện: <b>${operatorName}</b>\n• Lý do: <i>${reason.trim()}</i>`,
       false
     );
 
@@ -1751,71 +1822,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // 8b. Release a specific card directly from inventory (Card-centric)
-  const releaseCardDirectly = (cardId: string, reason?: string) => {
-    const card = cardsRef.current.find((c) => c.id === cardId);
-    if (!card) return { success: false, message: 'Không tìm thấy thẻ này trong hệ thống.' };
+  // 8b. Release a specific card directly from inventory via atomic RPC
+  const releaseCardDirectly = async (cardId: string, reason?: string): Promise<{ success: boolean; message: string }> => {
+    const card = cardsRef.current.find((c) => c.id === cardId || c.code === cardId);
+    const cardCode = card?.code || cardId;
 
-    const reqId = card.currentRequestId;
-    const cardCode = card.code;
+    const res = await supabaseService.releaseCardAtomic(undefined, cardCode, reason, currentUser.id, 'release_card_to_waitlist');
+    if (!res.success) {
+      return { success: false, message: res.message || 'Lỗi nhả thẻ về kho' };
+    }
 
-    // 1. Đặt thẻ về available trong bộ nhớ
-    const nextCards = cardsRef.current.map((c) =>
-      c.id === cardId
-        ? {
-            ...c,
-            status: 'available' as const,
-            currentRequestId: undefined,
-            assignedToName: undefined,
-            assignedToCode: undefined,
-          }
-        : c
-    );
-    setCards(nextCards);
-    cardsRef.current = nextCards;
+    const autoAssignedTo = res.data?.auto_assigned_to;
+    const originRequestId = res.data?.origin_request_id;
 
-    let updatedReq: TaxiRequest | undefined = undefined;
-
-    // 2. Nếu thẻ đang liên kết với một đơn
-    if (reqId) {
-      const targetReq = requestsRef.current.find((r) => r.id === reqId);
-      if (targetReq) {
-        // Kiểm tra xem đơn này còn thẻ nào khác đang giữ không
-        const otherCards = nextCards.filter(
-          (c) => c.currentRequestId === reqId && c.id !== cardId && (c.status === 'reserved' || c.status === 'in_use')
-        );
-
-        if (otherCards.length === 0 && targetReq.status === 'pending_handover') {
-          // Không còn thẻ nào khác giữ -> chuyển đơn về waitlist_cards
-          updatedReq = {
-            ...targetReq,
-            status: 'waitlist_cards',
-            isWaitlisted: true,
-            reservedCardCode: undefined,
-          };
-          setRequests((prev) => prev.map((r) => (r.id === reqId ? updatedReq! : r)));
-          requestsRef.current = requestsRef.current.map((r) => (r.id === reqId ? updatedReq! : r));
-        } else if (otherCards.length > 0 && targetReq.reservedCardCode === cardCode) {
-          // Còn thẻ khác -> đổi reservedCardCode sang thẻ kia
-          updatedReq = {
-            ...targetReq,
-            reservedCardCode: otherCards[0].code,
-          };
-          setRequests((prev) => prev.map((r) => (r.id === reqId ? updatedReq! : r)));
-          requestsRef.current = requestsRef.current.map((r) => (r.id === reqId ? updatedReq! : r));
+    setCards((prev) =>
+      prev.map((c) => {
+        if (c.code === cardCode) {
+          return autoAssignedTo
+            ? { ...c, status: 'reserved' as const, currentRequestId: autoAssignedTo }
+            : { ...c, status: 'available' as const, currentRequestId: undefined, assignedToName: undefined, assignedToCode: undefined };
         }
+        return c;
+      })
+    );
+
+    setRequests((prev) =>
+      prev.map((req) => {
+        if (originRequestId && req.id === originRequestId) {
+          return { ...req, status: 'waitlist_cards', isWaitlisted: true, reservedCardCode: undefined };
+        }
+        if (autoAssignedTo && req.id === autoAssignedTo) {
+          return { ...req, status: 'pending_handover', isWaitlisted: false, reservedCardCode: cardCode };
+        }
+        return req;
+      })
+    );
+
+    if (autoAssignedTo) {
+      const waitlistTarget = requests.find((r) => r.id === autoAssignedTo);
+      if (waitlistTarget) {
+        notifyEmployeeOrderProgress(
+          waitlistTarget.employeeId,
+          `🚗 <b>ĐÃ CÓ THẺ TAXI CHO BẠN!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Thẻ đã gán: <b>${cardCode}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Thẻ đã có sẵn tại quầy Hành chính. Bạn vui lòng qua gặp Admin để nhận thẻ vật lý nhé!`
+        );
+        syncEditTelegramMessages(
+          `msg_track_req_${autoAssignedTo}`,
+          `✅ <b>ĐÃ TỰ ĐỘNG GÁN THẺ TỪ HÀNG CHỜ!</b>\n\n• Mã yêu cầu: <code>${autoAssignedTo}</code>\n• Người mượn: <b>${waitlistTarget.employeeName}</b>\n• Thẻ tự động gán: <b>${cardCode}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ tại quầy</b>`,
+          true
+        );
       }
     }
 
-    // 3. Tự động kiểm tra xem có đơn nào trong waitlist cần thẻ này không
-    autoAssignCardIfWaitlisted(cardCode, reqId);
-
-    // 4. Đồng bộ tức thì lên Supabase
-    syncToSupabase(updatedReq, cardsRef.current);
-
     return {
       success: true,
-      message: `Đã giải phóng thẻ ${cardCode} về kho thành công!`,
+      message: autoAssignedTo
+        ? `Đã nhả thẻ ${cardCode} và tự động gán cho đơn chờ ${autoAssignedTo}.`
+        : `Đã đưa thẻ ${cardCode} về kho sẵn sàng thành công.`,
     };
   };
 

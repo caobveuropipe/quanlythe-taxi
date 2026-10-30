@@ -23,6 +23,7 @@ export const EmployeeRequestsViewMinimal: React.FC = () => {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Filter requests for the current employee
   const myRequests = requests
@@ -71,12 +72,22 @@ export const EmployeeRequestsViewMinimal: React.FC = () => {
     }
   };
 
-  const handleCancel = (reqId: string) => {
-    const res = cancelRequest(reqId, 'Nhân viên hủy đơn');
-    if (res.success) {
-      setFeedback('Đã hủy đơn thành công');
-      setShowCancelConfirm(false);
-      setSelectedRequest(null);
+  const handleCancel = async (reqId: string) => {
+    if (isCancelling) return;
+    setIsCancelling(true);
+    try {
+      const res = await cancelRequest(reqId, 'Nhân viên hủy đơn');
+      if (res.success) {
+        setFeedback('Đã hủy đơn thành công');
+        setShowCancelConfirm(false);
+        setSelectedRequest(null);
+      } else {
+        setFeedback(res.message);
+      }
+    } catch (err: any) {
+      setFeedback(err?.message || 'Lỗi khi hủy đơn');
+    } finally {
+      setIsCancelling(false);
     }
   };
 

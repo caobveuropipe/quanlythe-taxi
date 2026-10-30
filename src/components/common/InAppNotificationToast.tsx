@@ -4,7 +4,9 @@ import { CheckCircle2, AlertCircle, Info, X, ExternalLink, Bell } from 'lucide-r
 export interface InAppToastMessage {
   id: string;
   title: string;
-  description: string;
+  description?: string;
+  message?: string;
+  roleTarget?: string;
   type?: 'success' | 'info' | 'warning' | 'error';
   timestamp?: number;
   actionLabel?: string;
@@ -102,7 +104,7 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
                 <span className="text-[10px] text-white/50 shrink-0">vừa xong</span>
               </div>
               <p className="text-[11px] leading-relaxed text-white/80 line-clamp-2">
-                {notif.description}
+                {notif.description || notif.message}
               </p>
 
               {notif.actionLabel && notif.onAction && (

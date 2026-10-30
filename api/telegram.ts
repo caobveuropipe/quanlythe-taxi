@@ -1,21 +1,29 @@
 import { createClient } from '@supabase/supabase-js';
+import { timingSafeEqual } from 'crypto';
+import { verifyTelegramInitData } from '../server/ocrAuth';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-if (!BOT_TOKEN) {
-  console.warn('TELEGRAM_BOT_TOKEN is not defined in environment variables');
+function getBotToken(): string {
+  return process.env.TELEGRAM_BOT_TOKEN || '';
 }
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+function getTelegramApi(): string {
+  return `https://api.telegram.org/bot${getBotToken()}`;
+}
+
 const SUPER_ADMIN_ID = '5139629652';
 const WEBAPP_URL = 'https://quanly-thetaxi.vercel.app';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://zcklztoovbtukrntlibe.supabase.co';
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_1tM15vXnXZzu0zS5XBscVg_teKBHbjx';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY || SUPABASE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
   try {
-    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+    const res = await fetch(`${getTelegramApi()}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -34,7 +42,7 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
 
 async function answerCallbackQuery(callbackQueryId: string, text: string) {
   try {
-    await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+    await fetch(`${getTelegramApi()}/answerCallbackQuery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -49,7 +57,7 @@ async function answerCallbackQuery(callbackQueryId: string, text: string) {
 
 async function editMessageText(chatId: string | number, messageId: number, text: string, replyMarkup?: any) {
   try {
-    const res = await fetch(`${TELEGRAM_API}/editMessageText`, {
+    const res = await fetch(`${getTelegramApi()}/editMessageText`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -102,23 +110,26 @@ async function editAllTrackedMessages(
 
   // Sửa trực tiếp toàn bộ tin nhắn gốc của TẤT CẢ các Admin và GỠ BỎ TOÀN BỘ NÚT BẤM (inline_keyboard: [])
   if (tracked.length > 0) {
-    await Promise.all(
+    const editResults = await Promise.all(
       tracked.map((m) =>
-        editMessageText(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => {})
+        editMessageText(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => null)
       )
     );
-  }
 
-  // Dọn dẹp bản ghi tracker khỏi Supabase (chỉ xóa khi không yêu cầu giữ lại)
-  if (!keepTracker) {
-    await supabase.from('users').delete().eq('id', trackId).catch(() => {});
+    // Dọn dẹp bản ghi tracker khỏi Supabase (chỉ xóa khi không yêu cầu giữ lại VÀ toàn bộ tin nhắn sửa thành công)
+    if (!keepTracker) {
+      const allSucceeded = editResults.every((res: any) => res && res.ok === true);
+      if (allSucceeded) {
+        await supabase.from('users').delete().eq('id', trackId);
+      }
+    }
   }
 }
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Bot-Api-Secret-Token');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -132,20 +143,98 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const update = req.body;
+  let update = req.body;
+  if (typeof update === 'string') {
+    try {
+      update = JSON.parse(update);
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+  }
+
   if (!update) {
     return res.status(400).json({ error: 'Empty body' });
   }
 
-  // Client-side secure proxy actions: no bot token exposed to browsers!
-  if (update.custom_action === 'sendMessage') {
-    const result = await sendTelegramMessage(update.chat_id, update.text, update.reply_markup);
-    return res.status(200).json(result || { ok: false });
+  // Client-side secure proxy actions from Mini App (bắt buộc xác thực initData)
+  if (update.custom_action) {
+    const botToken = getBotToken();
+    if (!botToken) {
+      return res.status(500).json({ error: 'Server Misconfiguration: TELEGRAM_BOT_TOKEN is not configured' });
+    }
+
+    const authenticatedTgId = verifyTelegramInitData(update.init_data, botToken);
+    if (!authenticatedTgId) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing Telegram initData' });
+    }
+
+    if (update.custom_action === 'sendMessage') {
+      const result = await sendTelegramMessage(update.chat_id, update.text, update.reply_markup);
+      return res.status(200).json(result || { ok: false });
+    }
+
+    if (update.custom_action === 'editMessageText') {
+      const result = await editMessageText(update.chat_id, update.message_id, update.text, update.reply_markup);
+      return res.status(200).json(result || { ok: false });
+    }
+
+    if (update.custom_action === 'assignCardAtomic') {
+      const { data, error } = await supabase.rpc('assign_taxi_card_atomic', {
+        p_request_id: update.requestId,
+        p_card_code: update.cardCode || null,
+        p_operator_id: update.operatorId || authenticatedTgId,
+        p_is_handover: Boolean(update.isHandover),
+      });
+      if (error) {
+        return res.status(400).json({ success: false, code: error.code, message: error.message });
+      }
+      return res.status(200).json({ success: true, data });
+    }
+
+    if (update.custom_action === 'cancelRequestAtomic') {
+      const { data, error } = await supabase.rpc('cancel_taxi_request_atomic', {
+        p_request_id: update.requestId,
+        p_reason: update.reason,
+        p_operator_id: update.operatorId || authenticatedTgId,
+      });
+      if (error) {
+        return res.status(400).json({ success: false, code: error.code, message: error.message });
+      }
+      return res.status(200).json({ success: true, data });
+    }
+
+    if (update.custom_action === 'releaseCardAtomic') {
+      const { data, error } = await supabase.rpc('release_taxi_card_atomic', {
+        p_request_id: update.requestId || null,
+        p_card_code: update.cardCode || null,
+        p_reason: update.reason || null,
+        p_operator_id: update.operatorId || authenticatedTgId,
+        p_action_type: update.actionType || 'release_reservation',
+      });
+      if (error) {
+        return res.status(400).json({ success: false, code: error.code, message: error.message });
+      }
+      return res.status(200).json({ success: true, data });
+    }
+
+    return res.status(400).json({ error: 'Unknown custom action' });
   }
 
-  if (update.custom_action === 'editMessageText') {
-    const result = await editMessageText(update.chat_id, update.message_id, update.text, update.reply_markup);
-    return res.status(200).json(result || { ok: false });
+  // Webhook Telegram Server verification (Fail-Closed)
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!webhookSecret || webhookSecret.trim() === '') {
+    return res.status(500).json({ error: 'Server Misconfiguration: TELEGRAM_WEBHOOK_SECRET is not configured' });
+  }
+
+  const incomingSecret = req.headers['x-telegram-bot-api-secret-token'];
+  if (typeof incomingSecret !== 'string') {
+    return res.status(401).json({ error: 'Unauthorized: Missing secret token header' });
+  }
+
+  const expectedBuf = Buffer.from(webhookSecret);
+  const incomingBuf = Buffer.from(incomingSecret);
+  if (expectedBuf.length !== incomingBuf.length || !timingSafeEqual(expectedBuf, incomingBuf)) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid secret token header' });
   }
 
   try {
@@ -352,118 +441,95 @@ export default async function handler(req: any, res: any) {
         }
       } else if (data.startsWith('approve_req_')) {
         const reqId = data.replace('approve_req_', '');
-        const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
 
-        if (!targetReq) {
-          await answerCallbackQuery(cb.id, '❌ Không tìm thấy yêu cầu mượn thẻ!');
+        // Gọi RPC nguyên tử assign_taxi_card_atomic (Nhánh 3: Duyệt nhanh không chỉ định thẻ)
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('assign_taxi_card_atomic', {
+          p_request_id: reqId,
+          p_card_code: null,
+          p_operator_id: callerUser?.id || callerFromId,
+          p_is_handover: false,
+        });
+
+        if (rpcErr) {
+          await answerCallbackQuery(cb.id, `❌ Lỗi khi duyệt cấp thẻ: ${rpcErr.message}`);
           return res.status(200).json({ ok: true });
         }
 
-        // Kiểm tra xem yêu cầu đã được xử lý chưa (không còn pending_admin / pending_leader)
-        if (targetReq.status !== 'pending_admin' && targetReq.status !== 'pending_leader') {
-          await answerCallbackQuery(cb.id, `⚠️ Yêu cầu ${reqId} đã được xử lý trước đó với trạng thái: ${targetReq.status}!`);
+        const result = rpcRes?.result;
+        const assignedCardCode = rpcRes?.card_code;
+        const currentOperatorName = rpcRes?.operator_name || approverName;
+
+        if (result === 'already_processed') {
+          await answerCallbackQuery(cb.id, `⚠️ Yêu cầu ${reqId} đã được xử lý trước đó với trạng thái: ${rpcRes?.status}!`);
           await editAllTrackedMessages(
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Trạng thái hiện tại: <b>${targetReq.status}</b>\n• Người xử lý: <b>${targetReq.admin_approver_name || 'Admin'}</b>`
+            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái hiện tại: <b>${rpcRes?.status}</b>\n• Người xử lý: <b>${currentOperatorName}</b>`
           );
           return res.status(200).json({ ok: true });
         }
 
-        const now = new Date().toISOString();
+        if (result === 'assigned_new' || result === 'assigned_existing') {
+          await answerCallbackQuery(cb.id, `✅ Đã duyệt cấp thẻ ${assignedCardCode}!`);
 
-        // Tìm thẻ đang available trong kho
-        const { data: availableCards } = await supabase
-          .from('taxi_cards')
-          .select('*')
-          .eq('status', 'available')
-          .order('code', { ascending: true })
-          .limit(1);
-
-        const availableCard = availableCards?.[0];
-
-        if (availableCard) {
-          // 1. Cập nhật thẻ sang reserved
-          await supabase.from('taxi_cards').update({
-            status: 'reserved',
-            current_request_id: reqId,
-            assigned_to_name: targetReq.employee_name,
-            assigned_to_code: targetReq.employee_code,
-          }).eq('id', availableCard.id);
-
-          // 2. Cập nhật yêu cầu sang pending_handover
-          await supabase.from('taxi_requests').update({
-            admin_approval_status: 'approved',
-            admin_approval_comment: 'Admin đã duyệt cấp thẻ qua Telegram Bot',
-            admin_approved_at: now,
-            admin_approver_name: approverName,
-            is_waitlisted: false,
-            reserved_card_code: availableCard.code,
-            handover_ready_at: now,
-            status: 'pending_handover',
-          }).eq('id', reqId);
-
-          await answerCallbackQuery(cb.id, `✅ Đã duyệt cấp thẻ ${availableCard.code} cho ${targetReq.employee_name}!`);
-
-          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (Không sinh thêm tin nhắn thừa)
+          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (keepTracker = true)
           await editAllTrackedMessages(
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Thẻ giữ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`
-          );
-
-          // Thông báo cho nhân viên mượn thẻ nếu có telegram_id
-          const { data: empUser } = await supabase
-            .from('users')
-            .select('telegram_id')
-            .eq('id', targetReq.employee_id)
-            .maybeSingle();
-
-          const empTelegramId = empUser?.telegram_id;
-          if (empTelegramId) {
-            await sendTelegramMessage(
-              empTelegramId,
-              `🎉 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Thẻ dự kiến: <b>${availableCard.code}</b>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ vật lý trước giờ khởi hành!`
-            ).catch(() => {});
-          }
-        } else {
-          // Hết thẻ sẵn sàng trong kho -> Xếp Waitlist
-          await supabase.from('taxi_requests').update({
-            admin_approval_status: 'approved',
-            admin_approval_comment: 'Admin đã duyệt (chờ thẻ vào kho)',
-            admin_approved_at: now,
-            admin_approver_name: approverName,
-            is_waitlisted: true,
-            status: 'waitlist_cards',
-          }).eq('id', reqId);
-
-          await answerCallbackQuery(cb.id, `⏳ Kho hết thẻ trống! Đơn ${reqId} đã được đưa vào danh sách chờ thẻ.`);
-
-          // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (nhưng giữ tracker để bước cấp thẻ sau sửa tiếp)
-          await editAllTrackedMessages(
-            `msg_track_req_${reqId}`,
-            cb.message?.chat?.id,
-            cb.message?.message_id,
-            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người mượn: <b>${targetReq.employee_name}</b> (<code>${targetReq.employee_code}</code>)\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`,
+            `✅ <b>ĐÃ DUYỆT CẤP THẺ THÀNH CÔNG!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Thẻ giữ dự kiến: <b>${assignedCardCode}</b>\n• Người duyệt: <b>${currentOperatorName}</b>\n• Trạng thái: <b>Chờ bàn giao thẻ tại quầy</b>`,
             true
           );
 
-          // Thông báo cho nhân viên
-          const { data: empUser } = await supabase
-            .from('users')
-            .select('telegram_id')
-            .eq('id', targetReq.employee_id)
-            .maybeSingle();
+          // Thông báo cho nhân viên mượn thẻ nếu có telegram_id
+          const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
+          if (targetReq?.employee_id) {
+            const { data: empUser } = await supabase
+              .from('users')
+              .select('telegram_id')
+              .eq('id', targetReq.employee_id)
+              .maybeSingle();
 
-          const empTelegramId = empUser?.telegram_id;
-          if (empTelegramId) {
-            await sendTelegramMessage(
-              empTelegramId,
-              `⏳ <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người duyệt: <b>${approverName}</b>\n• Trạng thái: <b>Đang chờ thẻ trống</b>\n\nDo kho thẻ hiện đang được sử dụng hết, yêu cầu của bạn đã được đưa vào danh sách chờ ưu tiên. Khi có thẻ hoàn trả về quầy, hệ thống sẽ tự động gán thẻ và thông báo cho bạn ngay!`
-            ).catch(() => {});
+            const empTelegramId = empUser?.telegram_id;
+            if (empTelegramId) {
+              await sendTelegramMessage(
+                empTelegramId,
+                `🎉 <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Thẻ dự kiến: <b>${assignedCardCode}</b>\n• Người duyệt: <b>${currentOperatorName}</b>\n• Trạng thái: <b>Sẵn sàng nhận thẻ</b>\n\n👉 Bạn vui lòng đến quầy Hành chính gặp Admin để nhận thẻ vật lý trước giờ khởi hành!`
+              ).catch(() => {});
+            }
           }
+          return res.status(200).json({ ok: true });
+        }
+
+        if (result === 'waitlisted') {
+          await answerCallbackQuery(cb.id, `⏳ Kho hết thẻ trống! Đơn ${reqId} đã được đưa vào danh sách chờ thẻ.`);
+
+          await editAllTrackedMessages(
+            `msg_track_req_${reqId}`,
+            cb.message?.chat?.id,
+            cb.message?.message_id,
+            `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người duyệt: <b>${currentOperatorName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`,
+            true
+          );
+
+          const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();
+          if (targetReq?.employee_id) {
+            const { data: empUser } = await supabase
+              .from('users')
+              .select('telegram_id')
+              .eq('id', targetReq.employee_id)
+              .maybeSingle();
+
+            const empTelegramId = empUser?.telegram_id;
+            if (empTelegramId) {
+              await sendTelegramMessage(
+                empTelegramId,
+                `⏳ <b>YÊU CẦU MƯỢN THẺ ĐÃ ĐƯỢC DUYỆT</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người duyệt: <b>${currentOperatorName}</b>\n• Trạng thái: <b>Đang chờ thẻ trống</b>\n\nDo kho thẻ hiện đang được sử dụng hết, yêu cầu của bạn đã được đưa vào danh sách chờ ưu tiên. Khi có thẻ hoàn trả về quầy, hệ thống sẽ tự động gán thẻ và thông báo cho bạn ngay!`
+              ).catch(() => {});
+            }
+          }
+          return res.status(200).json({ ok: true });
         }
       } else if (data.startsWith('reject_req_')) {
         const reqId = data.replace('reject_req_', '');
@@ -714,15 +780,35 @@ export default async function handler(req: any, res: any) {
 
           // Lưu tracking tin nhắn gửi cho các Admin để khi 1 Admin duyệt, tất cả tin nhắn này đều được sửa và xóa nút
           if (adminTrackedMsgs.length > 0) {
-            await supabase.from('users').upsert({
-              id: `msg_track_req_${reqId}`,
-              name: 'Tracker',
-              code: 'MSG_META',
-              department: 'system',
-              role: 'system',
-              telegram_username: JSON.stringify(adminTrackedMsgs),
-              updated_at: new Date().toISOString(),
-            }).catch(() => {});
+            try {
+              const { data: existingTrackMeta } = await supabase
+                .from('users')
+                .select('telegram_username')
+                .eq('id', `msg_track_req_${reqId}`)
+                .maybeSingle();
+
+              let combinedTracked = [...adminTrackedMsgs];
+              if (existingTrackMeta?.telegram_username) {
+                const oldTracked: Array<{ chatId: string | number; messageId: number }> = JSON.parse(existingTrackMeta.telegram_username);
+                for (const oldM of oldTracked) {
+                  if (!combinedTracked.some((c) => String(c.chatId) === String(oldM.chatId) && Number(c.messageId) === Number(oldM.messageId))) {
+                    combinedTracked.push(oldM);
+                  }
+                }
+              }
+
+              await supabase.from('users').upsert({
+                id: `msg_track_req_${reqId}`,
+                name: 'Tracker',
+                code: 'MSG_META',
+                department: 'system',
+                role: 'system',
+                telegram_username: JSON.stringify(combinedTracked),
+                updated_at: new Date().toISOString(),
+              });
+            } catch (err) {
+              console.warn('Error upserting merged admin message tracker:', err);
+            }
           }
         } catch (e) {
           console.warn('Error notifying admins after leader approved:', e);

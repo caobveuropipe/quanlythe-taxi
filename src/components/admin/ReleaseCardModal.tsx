@@ -17,20 +17,28 @@ export const ReleaseCardModal: React.FC<ReleaseCardModalProps> = ({
   const { currentUser, releaseReservedCard } = useApp();
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleRelease = (e: React.FormEvent) => {
+  const handleRelease = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason.trim()) {
       setError('Vui lòng nhập lý do giải phóng thẻ đã giữ.');
       return;
     }
-
-    const res = releaseReservedCard(request.id, reason, currentUser.name);
-    if (res.success) {
-      onSuccess();
-      onClose();
-    } else {
-      setError(res.message);
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await releaseReservedCard(request.id, reason, currentUser.name);
+      if (res.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Lỗi khi giải phóng thẻ');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -89,9 +97,11 @@ export const ReleaseCardModal: React.FC<ReleaseCardModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+              disabled={loading}
+              className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5"
             >
-              Xác nhận giải phóng
+              {loading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {loading ? 'Đang xử lý...' : 'Xác nhận giải phóng'}
             </button>
           </div>
         </form>

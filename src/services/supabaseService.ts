@@ -329,4 +329,126 @@ export const supabaseService = {
       console.warn('Supabase upsertAppAnnouncement error:', e);
     }
   },
+
+  // Atomic RPC: assign_taxi_card_atomic
+  async assignCardAtomic(
+    requestId: string,
+    cardCode?: string,
+    operatorId?: string,
+    isHandover: boolean = false
+  ): Promise<RpcResult> {
+    return callProxyRpcWithRetry('assignCardAtomic', {
+      requestId,
+      cardCode: cardCode || null,
+      operatorId: operatorId || null,
+      isHandover,
+    });
+  },
+
+  // Atomic RPC: cancel_taxi_request_atomic
+  async cancelRequestAtomic(
+    requestId: string,
+    reason: string,
+    operatorId: string
+  ): Promise<RpcResult> {
+    return callProxyRpcWithRetry('cancelRequestAtomic', {
+      requestId,
+      reason,
+      operatorId,
+    });
+  },
+
+  // Atomic RPC: release_taxi_card_atomic
+  async releaseCardAtomic(
+    requestId?: string,
+    cardCode?: string,
+    reason?: string,
+    operatorId?: string,
+    actionType: string = 'release_reservation'
+  ): Promise<RpcResult> {
+    return callProxyRpcWithRetry('releaseCardAtomic', {
+      requestId: requestId || null,
+      cardCode: cardCode || null,
+      reason: reason || null,
+      operatorId: operatorId || null,
+      actionType,
+    });
+  },
 };
+
+export interface RpcResult<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  code?: string;
+}
+
+const RETRYABLE_CODES = new Set(['T5001', 'T5002', '40P01']);
+
+async function callProxyRpcWithRetry(
+  action: string,
+  payload: Record<string, any>,
+  maxRetries = 3
+): Promise<RpcResult> {
+  const proxyUrl =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'https://quanly-thetaxi.vercel.app/api/telegram'
+      : '/api/telegram';
+
+  const initData = typeof window !== 'undefined' ? (window as any).Telegram?.WebApp?.initData || '' : '';
+
+  let lastErrorMsg = 'Thao tác không thành công';
+  let lastErrorCode: string | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          custom_action: action,
+          init_data: initData,
+          ...payload,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        lastErrorCode = json?.code;
+        lastErrorMsg = json?.message || json?.error || `Lỗi máy chủ (${res.status})`;
+
+        if (lastErrorCode && RETRYABLE_CODES.has(lastErrorCode) && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt - 1) * 200 + Math.random() * 100;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        return { success: false, message: lastErrorMsg, code: lastErrorCode };
+      }
+
+      if (json && json.success === false) {
+        lastErrorCode = json.code;
+        lastErrorMsg = json.message || 'Thao tác bị từ chối';
+
+        if (lastErrorCode && RETRYABLE_CODES.has(lastErrorCode) && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt - 1) * 200 + Math.random() * 100;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        return { success: false, message: lastErrorMsg, code: lastErrorCode };
+      }
+
+      return { success: true, data: json?.data || json };
+    } catch (err: any) {
+      lastErrorMsg = err?.message || 'Lỗi kết nối mạng';
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt - 1) * 200 + Math.random() * 100;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+    }
+  }
+
+  return { success: false, message: `${lastErrorMsg} (đã thử lại ${maxRetries} lần)`, code: lastErrorCode };
+}

@@ -17,12 +17,24 @@ Quan ly the taxi/
 |   |-- architecture/
 |   |   `-- MASTER.md                                 # Luồng nghiệp vụ & quy tắc vận hành
 |   |-- changelog/
-|   |   `-- CHANGELOG-FE.md                           # Nhật ký cập nhật frontend
+|   |   `-- CHANGELOG-FE.md                           # Nhật ký cập nhật frontend & backend fixes
 |   |-- testing/
 |   |   `-- operational-workflow-enhancements-test-cases.md # Test cases nghiệp vụ
 |   |-- history/
 |   |   `-- features/                                 # Lưu trữ các feature đã hoàn thành
 |   `-- skills/                                       # Bộ skill pack chuẩn hóa
+|-- api/
+|   `-- telegram.ts                                   # Telegram Webhook & Mini App Proxy (Fail-closed secret & HMAC)
+|-- scripts/
+|   `-- setup-telegram-webhook.mjs                    # Đăng ký bot webhook với secret token
+|-- supabase/
+|   `-- migrations/
+|       `-- 20261030_enforce_single_active_card_per_request.sql # Unique Partial Index & 3 Atomic RPCs
+|-- tests/
+|   |-- launch-context.test.ts
+|   |-- phase1_rpc.test.ts
+|   |-- phase2_webhook_concurrency.test.ts
+|   `-- phase3_integration_concurrency.test.ts
 |-- src/
 |   |-- App.tsx                                       # Điều phối giao diện Telegram Mini App & Role Switcher
 |   |-- main.tsx                                      # Entry point React
@@ -87,6 +99,9 @@ Quan ly the taxi/
 
 ## 5. Key Boundaries & Invariants
 
+- **Single Active Card Invariant (2026-10-30):** DB Unique Partial Index `idx_taxi_cards_single_active_request` trên `taxi_cards(current_request_id) WHERE current_request_id IS NOT NULL AND status IN ('reserved', 'in_use')` ngăn chặn 1 request liên kết với > 1 thẻ active.
+- **Global Lock Hierarchy (2026-10-30):** Toàn bộ transaction RPCs (`assign_taxi_card_atomic`, `cancel_taxi_request_atomic`, `release_taxi_card_atomic`) tuân thủ nghiêm ngặt thứ tự Level 1 (Requests theo ID tăng dần) -> Level 2 (Cards theo mã tăng dần) để triệt tiêu deadlock PostgreSQL 40P01.
+- **Fail-Closed Webhook Security (2026-10-30):** Route `/api/telegram` bắt buộc `TELEGRAM_WEBHOOK_SECRET` và xác thực header `X-Telegram-Bot-Api-Secret-Token` qua timingSafeEqual; custom actions từ Mini App bắt buộc chữ ký HMAC-SHA256 của `initData`.
 - **Storage Key:** Sử dụng key `taxicard_app_data_v3` trên localStorage cho toàn bộ state.
 - **Invariant 1 đơn active duy nhất (FR-02):** Một nhân sự chỉ được có 1 đơn ở các trạng thái active (`pending_leader`, `pending_admin`, `waitlist_cards`, `pending_handover`, `holding_card`, `returned_pending_bill`, `overbudget_pending_hr`). Chặn tạo mới hoặc hoàn tác nếu đã có đơn active.
 - **Fallback GUEST an toàn (FR-04):** Khi xuất nhanh tại quầy cho người ngoài danh mục users, luôn fallback an toàn sang `employeeCode: 'GUEST'`, `department: 'Khách ngoài / Đột xuất'`.

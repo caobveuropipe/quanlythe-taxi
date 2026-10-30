@@ -6,6 +6,34 @@
 
 ---
 
+## [2026-10-30] - Khắc phục Lỗi Không Đồng Bộ Telegram - MiniApp và Cấp Trùng 2 Thẻ (Multi-card Concurrency & Sync Fix)
+
+### fix(concurrency): khắc phục lỗi cấp trùng thẻ, đồng bộ webhook telegram và atomic rpc transaction
+
+- **PostgreSQL Atomic RPCs & DB Invariant:**
+  - Bổ sung Unique Partial Index `idx_taxi_cards_single_active_request` trên `taxi_cards(current_request_id)` ngăn ngừa triệt để 1 đơn giữ 2 thẻ active.
+  - Tích hợp 3 RPC function nguyên tử (`assign_taxi_card_atomic`, `cancel_taxi_request_atomic`, `release_taxi_card_atomic`) tuân thủ Global Lock Hierarchy (Level 1: Requests theo ID tăng dần -> Level 2: Card) loại bỏ hoàn toàn nguy cơ deadlock PostgreSQL `40P01`.
+  - Thiết lập Trust Boundary: Thu hồi quyền từ `anon`/`authenticated`/`public`, chỉ cho phép `service_role` thực thi RPC server-side.
+  - Files: `supabase/migrations/20261030_enforce_single_active_card_per_request.sql`, `src/services/supabaseService.ts`
+
+- **Webhook Fail-Closed & Mini App Proxy HMAC Auth:**
+  - Endpoint `/api/telegram` áp dụng Fail-Closed constant-time check với `TELEGRAM_WEBHOOK_SECRET` qua header `X-Telegram-Bot-Api-Secret-Token`.
+  - Toàn bộ custom action proxy từ Mini App (gửi/sửa tin nhắn Telegram, gọi RPC) đều yêu cầu chữ ký HMAC-SHA256 của `initData`.
+  - Luồng duyệt nhanh trên Telegram (`approve_req_`) gọi trực tiếp RPC `assign_taxi_card_atomic`, loại bỏ việc đọc/ghi ngoài transaction và chấm dứt nghịch lý ghi đè `waitlist_cards` khi đơn đã có thẻ.
+  - Files: `api/telegram.ts`, `.env.example`, `scripts/setup-telegram-webhook.mjs`
+
+- **UI Async Contract & Persistent Anti-Double-Click Lock:**
+  - Chuyển toàn bộ các phương thức thao tác thẻ trong `AppContext` (`adminApprove`, `assignCardFromWaitlist`, `confirmHandover`, `cancelRequest`, `releaseReservedCard`, `releaseCardDirectly`) sang `Promise<{ success: boolean; message: string }>`.
+  - Cập nhật cả 5 UI views sang `async/await` với trạng thái loading bền bỉ trong `finally`, loại bỏ timeout giải phóng sớm và bảo đảm modal chỉ đóng khi server commit thành công.
+  - Files: `src/context/AppContext.tsx`, `src/components/admin/AdminActionQueueView.tsx`, `src/components/admin/ReleaseCardModal.tsx`, `src/components/admin/AdminInventoryView.tsx`, `src/components/employee/EmployeeRequestsView.tsx`, `src/components/employee/EmployeeRequestsViewMinimal.tsx`
+
+- **Bảo toàn Tracker Tin Nhắn Telegram Đa Admin:**
+  - Sửa `editAllTrackedMessages` và `syncEditTelegramMessages` chỉ xóa tracker khi đơn kết thúc hoàn toàn VÀ toàn bộ tin nhắn sửa thành công (`allSucceeded === true`).
+  - Hợp nhất mảng tracker theo tập hợp `(chatId, messageId)` khi Leader duyệt, chống mất dấu tin nhắn của các Admin khác.
+  - Files: `api/telegram.ts`, `src/context/AppContext.tsx`
+
+---
+
 ## [2026-10-18] - Chuẩn hóa Giao diện Admin PA 1 & Bộ 4 Tính năng Vận hành Nâng cao
 
 ### feat(admin-ops): chuẩn hóa giao diện admin PA 1 và bộ 4 tính năng vận hành nâng cao

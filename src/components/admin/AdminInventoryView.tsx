@@ -44,6 +44,7 @@ export const AdminInventoryView: React.FC = () => {
 
   // Release reserved card confirmation state
   const [releasingCard, setReleasingCard] = useState<TaxiCard | null>(null);
+  const [isReleasing, setIsReleasing] = useState(false);
   const [releaseFeedback, setReleaseFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
   // Return & bill modal trigger directly from card
@@ -710,15 +711,25 @@ export const AdminInventoryView: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const res = releaseCardDirectly(releasingCard.id);
-                  setReleaseFeedback(res);
-                  setReleasingCard(null);
-                  setTimeout(() => setReleaseFeedback(null), 3500);
+                disabled={isReleasing}
+                onClick={async () => {
+                  if (isReleasing) return;
+                  setIsReleasing(true);
+                  try {
+                    const res = await releaseCardDirectly(releasingCard.id);
+                    setReleaseFeedback(res);
+                    setReleasingCard(null);
+                    setTimeout(() => setReleaseFeedback(null), 3500);
+                  } catch (err: any) {
+                    setReleaseFeedback({ success: false, message: err?.message || 'Lỗi khi nhả thẻ' });
+                  } finally {
+                    setIsReleasing(false);
+                  }
                 }}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow-xs"
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded shadow-xs flex items-center justify-center gap-1.5"
               >
-                Xác nhận nhả thẻ
+                {isReleasing && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                {isReleasing ? 'Đang xử lý...' : 'Xác nhận nhả thẻ'}
               </button>
             </div>
           </div>

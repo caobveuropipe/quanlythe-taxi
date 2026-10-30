@@ -133,11 +133,11 @@ export const EmployeeRegisterViewMinimal: React.FC<EmployeeRegisterViewMinimalPr
   };
 
   // Step 2: Final Submit upon user confirmation
-  const handleFinalSubmit = () => {
+  const handleFinalSubmit = async () => {
     setShowConfirmModal(false);
     setErrorMessage(null);
 
-    const res = createRequest(
+    const res = await createRequest(
       purpose,
       destination,
       clientTag.trim(),
