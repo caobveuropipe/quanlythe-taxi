@@ -101,9 +101,9 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
             <div className="flex-1 min-w-0 pr-1">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <h4 className="text-xs font-bold leading-tight truncate">{notif.title}</h4>
-                <span className="text-[10px] text-white/50 shrink-0">vừa xong</span>
+                <span className="text-[10px] opacity-60 shrink-0">vừa xong</span>
               </div>
-              <p className="text-[11px] leading-relaxed text-white/80 line-clamp-2">
+              <p className="text-[11px] leading-relaxed opacity-90 line-clamp-2">
                 {notif.description || notif.message}
               </p>
 

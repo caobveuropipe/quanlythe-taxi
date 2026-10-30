@@ -187,8 +187,12 @@ export const supabaseService = {
       const { data, error } = await supabase
         .from('taxi_requests')
         .select('*')
-        .order('created_at', { ascending: false });
-      if (error || !data) return null;
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (error || !data) {
+        if (error) console.warn('Supabase getRequests error:', error.code, error.message);
+        return null;
+      }
       return data.map(fromDbRequest);
     } catch {
       return null;
@@ -317,7 +321,7 @@ export const supabaseService = {
   // Upsert app announcement to remote DB
   async upsertAppAnnouncement(announcement: AppAnnouncement) {
     try {
-      await supabase.from('users').upsert({
+      const { error } = await supabase.from('users').upsert({
         id: 'app_config_announcement',
         name: 'Cấu hình thông báo',
         code: 'APP_CONFIG',
@@ -325,6 +329,7 @@ export const supabaseService = {
         role: 'system',
         telegram_username: JSON.stringify(announcement),
       });
+      if (error) console.warn('Supabase upsertAppAnnouncement error:', error);
     } catch (e) {
       console.warn('Supabase upsertAppAnnouncement error:', e);
     }

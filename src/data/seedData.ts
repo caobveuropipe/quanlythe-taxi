@@ -1,7 +1,8 @@
 import { TaxiCard, TaxiRequest, UserProfile, DepartmentLeaderMapping, AppConfig, AppAnnouncement } from '../types';
 
 export const INITIAL_ANNOUNCEMENT: AppAnnouncement = {
-  enabled: true,
+  // Mặc định TẮT: chỉ hiện khi Admin bật & đã đồng bộ từ Supabase (tránh popup nháy ra khi chưa tải xong / lỗi mạng)
+  enabled: false,
   title: 'Thông báo quy định mượn thẻ Taxi',
   content: 'Nhân sự vui lòng gửi yêu cầu trước giờ khởi hành tối thiểu 30 phút. Sau chuyến đi, chụp ảnh hóa đơn rõ nét và hoàn trả thẻ trong vòng 24h để hoàn tất thủ tục quyết toán.',
   targetRole: 'all',

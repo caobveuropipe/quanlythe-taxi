@@ -22,6 +22,7 @@ import {
 import { scanTaxiReceipt, getSystemOcrStatus, type SystemOcrStatus } from '../../services/geminiOcrService';
 import { getCustomGeminiKey } from '../../utils/geminiKeyStorage';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
+import { compressReceiptImage } from '../../utils/imageCompressor';
 
 interface ReturnCardAndBillModalProps {
   request: TaxiRequest;
@@ -123,12 +124,10 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setReceiptPhotoUrl(dataUrl);
-      };
-      reader.readAsDataURL(file);
+      // Nén ảnh (~100-200KB) trước khi lưu vào DB; ảnh gốc base64 vài MB làm timeout query taxi_requests
+      compressReceiptImage(file, 1024, 1024, 0.7)
+        .then(({ base64Data, mimeType }) => setReceiptPhotoUrl(`data:${mimeType};base64,${base64Data}`))
+        .catch(() => setError('Không thể xử lý ảnh hóa đơn. Vui lòng chọn ảnh khác.'));
 
       // Kích hoạt quét OCR tự động
       executeOcrScan(file);

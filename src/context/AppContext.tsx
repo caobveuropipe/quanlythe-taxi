@@ -635,7 +635,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Immediate fresh sync function
-  const fetchFreshData = useCallback(async () => {
+  const fetchFreshData = useCallback(async (): Promise<boolean | void> => {
     if (supabaseStatus !== 'connected') return;
     try {
       const [remoteRequests, remoteUsers, remoteCards, remoteConfig] = await Promise.all([
@@ -645,6 +645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseService.getAppConfig(),
       ]);
 
+      if (remoteRequests === null) return false; // lỗi server → để vòng polling backoff
       if (remoteRequests && remoteRequests.length > 0) {
         applyRequestsDelta(remoteRequests);
       }
@@ -674,7 +675,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } catch (err) {
-      // Background poll silent fallback
+      return false; // Background poll silent fallback
     }
   }, [supabaseStatus, applyRequestsDelta, applyUsersDelta]);
 
@@ -683,7 +684,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (supabaseStatus !== 'connected') return;
 
     // 1. Polling interval
-    const intervalId = setInterval(fetchFreshData, 2000);
+    let stopped = false; let timer: ReturnType<typeof setTimeout> | undefined; let failures = 0;
+    const loop = async () => { if (stopped) return; if (!document.hidden) { const ok = await fetchFreshData(); failures = ok !== false ? 0 : Math.min(failures + 1, 4); } if (!stopped) timer = setTimeout(loop, Math.min(3000 * 2 ** failures, 30000)); };
+    timer = setTimeout(loop, 3000);
 
     // 2. Instant sync when user switches back from Telegram to Mini App
     const handleVisibility = () => {
@@ -699,7 +702,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.addEventListener('focus', handleFocus);
 
     return () => {
-      clearInterval(intervalId);
+      stopped = true;
+      if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleFocus);
     };

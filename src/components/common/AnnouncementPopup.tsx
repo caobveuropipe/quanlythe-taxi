@@ -56,7 +56,9 @@ export const AnnouncementPopup: React.FC<AnnouncementPopupProps> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const [isPaused, setIsPaused] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,26 +84,24 @@ export const AnnouncementPopup: React.FC<AnnouncementPopupProps> = ({
     }
 
     intervalRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          onClose();
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isOpen, isPaused, onClose]);
+  }, [isOpen, isPaused]);
+
+  // Tự đóng khi hết giờ (không gọi setState của parent bên trong updater)
+  useEffect(() => {
+    if (isOpen && timeLeft <= 0) onCloseRef.current();
+  }, [isOpen, timeLeft]);
 
   if (!isOpen) return null;
 
   const type = announcement.type || 'info';
 
-  const typeConfig = {
+  const typeConfigMap = {
     info: {
       gradient: 'from-blue-600 to-indigo-700',
       badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -130,9 +130,11 @@ export const AnnouncementPopup: React.FC<AnnouncementPopupProps> = ({
       tagText: 'Khẩn cấp / Bảo trì',
       progressBg: 'bg-rose-500',
     },
-  }[type];
+  };
+  // Giá trị lạ từ DB/config không được làm crash toàn app (màn hình trắng)
+  const typeConfig = typeConfigMap[type as keyof typeof typeConfigMap] ?? typeConfigMap.info;
 
-  const roleLabel = {
+  const roleLabelMap = {
     all: {
       label: 'Tất cả người dùng',
       icon: <Users className="w-3.5 h-3.5 text-slate-500" />,
@@ -148,7 +150,9 @@ export const AnnouncementPopup: React.FC<AnnouncementPopupProps> = ({
       icon: <User className="w-3.5 h-3.5 text-emerald-600" />,
       badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     },
-  }[announcement.targetRole || 'all'];
+  };
+  const roleLabel =
+    roleLabelMap[(announcement.targetRole || 'all') as keyof typeof roleLabelMap] ?? roleLabelMap.all;
 
   const progressPercentage = Math.max(0, Math.min(100, (timeLeft / durationSeconds) * 100));
 
