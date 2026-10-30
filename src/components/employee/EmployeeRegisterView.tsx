@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useLayout } from '../../context/LayoutContext';
 import {
   CreditCard,
   Send,
@@ -22,6 +23,7 @@ export const EmployeeRegisterView: React.FC<EmployeeRegisterViewProps> = ({
   onGoToRequests,
 }) => {
   const { currentUser, requests, cards, createRequest } = useApp();
+  const { isWide } = useLayout();
 
   const [purpose, setPurpose] = useState('');
   const [destination, setDestination] = useState('');
@@ -154,7 +156,7 @@ export const EmployeeRegisterView: React.FC<EmployeeRegisterViewProps> = ({
 
   // 2. Main Minimalist Register Form
   return (
-    <div className="p-4 space-y-4 max-w-md mx-auto">
+    <div className={isWide ? 'space-y-4' : 'p-4 space-y-4 max-w-md mx-auto'}>
       {/* Top Status Bar (Super Compact Pill) */}
       <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 text-xs">
         <div className="flex items-center gap-2">

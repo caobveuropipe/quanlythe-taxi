@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useLayout } from '../../context/LayoutContext';
 import { TaxiRequest } from '../../types';
 import { ReturnCardAndBillModal } from './ReturnCardAndBillModal';
 import { ReleaseCardModal } from './ReleaseCardModal';
@@ -28,6 +29,7 @@ import {
 import { formatVietnameseDateTime } from '../../utils/dateUtils';
 
 export const AdminActionQueueView: React.FC = () => {
+  const { isWide } = useLayout();
   const {
     currentUser,
     requests,
@@ -694,7 +696,15 @@ export const AdminActionQueueView: React.FC = () => {
   };
 
   return (
-    <div className="p-3 sm:p-4 space-y-3 max-w-xl mx-auto pb-20">
+    <div
+      className={
+        isWide
+          ? 'p-5 max-w-7xl mx-auto pb-10 grid grid-cols-[320px_minmax(0,1fr)] gap-5 items-start'
+          : 'p-3 sm:p-4 space-y-3 max-w-xl mx-auto pb-20'
+      }
+    >
+      {/* Cột trái (PC): tiêu đề, tìm kiếm, thao tác quầy */}
+      <div className={isWide ? 'space-y-3 sticky top-0' : 'space-y-3'}>
       {/* COMPACT HEADER */}
       <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
         <div>
@@ -809,7 +819,7 @@ export const AdminActionQueueView: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowDirectDispatchModal(true)}
-            className="flex-1 min-w-[180px] py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs rounded-md shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-98"
+            className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs rounded-md shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-98"
             title="Xuất thẻ ngay cho ca khẩn cấp không cần người nhận tạo đơn"
           >
             <Zap className="w-4 h-4 fill-white" />
@@ -819,13 +829,51 @@ export const AdminActionQueueView: React.FC = () => {
 
         <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
           <span>
-            Tổng công việc: <strong>{totalTodoCount}</strong> việc cần xử lý
+            Tổng việc: <strong>{totalTodoCount}</strong>
           </span>
           <span>
-            Kho thẻ: <strong className="text-emerald-600 dark:text-emerald-400">{availableCards.length}</strong> thẻ rảnh
+            Kho thẻ: <strong className="text-emerald-600 dark:text-emerald-400">{availableCards.length}</strong> rảnh
           </span>
         </div>
       </div>
+
+      {/* THỐNG KÊ QUY TRÌNH TRÊN PC */}
+      {isWide && (
+        <div className="p-3 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 text-xs">
+          <div className="font-bold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wider flex items-center justify-between">
+            <span>Tóm tắt quy trình</span>
+            <span className="text-[10px] text-slate-400 font-normal">Hôm nay</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-center">
+            <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-lg">
+              <div className="text-[10px] text-slate-500">Chờ cấp thẻ</div>
+              <div className="font-mono text-base font-bold text-blue-600">{totalDispatchCount}</div>
+            </div>
+            <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-lg">
+              <div className="text-[10px] text-slate-500">Chờ thu thẻ/bill</div>
+              <div className="font-mono text-base font-bold text-emerald-600">{totalCollectCount}</div>
+            </div>
+          </div>
+          <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 space-y-1.5 text-[11px]">
+            <div className="flex justify-between text-slate-600 dark:text-slate-400">
+              <span>Đơn chờ thẻ (Waitlist):</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white">{waitlistQueue.length}</span>
+            </div>
+            <div className="flex justify-between text-slate-600 dark:text-slate-400">
+              <span>Chờ bàn giao tại quầy:</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white">{handoverQueue.length}</span>
+            </div>
+            <div className="flex justify-between text-slate-600 dark:text-slate-400">
+              <span>Chờ nộp hóa đơn:</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white">{billingQueue.length}</span>
+            </div>
+            <div className="flex justify-between text-rose-600 dark:text-rose-400">
+              <span>Vượt hạn mức/chờ HR:</span>
+              <span className="font-mono font-bold">{overbudgetQueue.length}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Feedback */}
       {feedback && (
@@ -849,7 +897,10 @@ export const AdminActionQueueView: React.FC = () => {
       {/* ===================================================================== */}
       {/* PHƯƠNG ÁN 1: 2 TAB DUY NHẤT (CẤP THẺ - THU THẺ & BILL) */}
       {/* ===================================================================== */}
-      <div className="space-y-2.5">
+      </div>
+
+      {/* Cột phải (PC): danh sách việc cần xử lý */}
+      <div className="space-y-2.5 min-w-0">
           {/* 2 Main Tabs - 100% full width, no overflow scrollbar! */}
           <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-xs font-bold">
             <button
@@ -934,7 +985,7 @@ export const AdminActionQueueView: React.FC = () => {
                   Hiện không có yêu cầu nào cần cấp thẻ.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className={isWide ? 'grid grid-cols-1 2xl:grid-cols-2 gap-2 items-start' : 'space-y-2'}>
                   {/* Hiển thị các đơn đang chờ Leader nếu Admin chọn tab Leader hoặc All */}
                   {(twoTabsDispatchFilter === 'all' || twoTabsDispatchFilter === 'leader') &&
                     pendingLeaderQueue.map((req) => renderPendingLeaderCard(req))}
@@ -983,7 +1034,7 @@ export const AdminActionQueueView: React.FC = () => {
                   Không có lượt mượn thẻ nào đang chờ thu hồi hoặc nợ bill.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className={isWide ? 'grid grid-cols-1 2xl:grid-cols-2 gap-2 items-start' : 'space-y-2'}>
                   {(twoTabsCollectFilter === 'all' || twoTabsCollectFilter === 'billing') &&
                     billingQueue.map((req) => renderBillingCard(req))}
 

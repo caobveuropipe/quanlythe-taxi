@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useLayout } from '../../context/LayoutContext';
 import { TaxiRequest, UserProfile } from '../../types';
 import {
   Calendar,
@@ -33,6 +34,7 @@ interface EmployeeReportSummary {
 }
 
 export const AdminReportsView: React.FC = () => {
+  const { isWide } = useLayout();
   const { requests, users } = useApp();
 
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-10'); // YYYY-MM
@@ -115,7 +117,7 @@ export const AdminReportsView: React.FC = () => {
   const grandTotalTripsWithBill = sortedSummaries.reduce((sum, s) => sum + s.tripsWithBillCount, 0);
 
   return (
-    <div className="p-4 space-y-4 max-w-xl mx-auto">
+    <div className={isWide ? 'p-6 max-w-6xl mx-auto space-y-4' : 'p-4 space-y-4 max-w-xl mx-auto'}>
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
         <div>
@@ -208,7 +210,7 @@ export const AdminReportsView: React.FC = () => {
       </div>
 
       {/* Employee List */}
-      <div className="space-y-2">
+      <div className={isWide ? 'grid grid-cols-2 gap-3 space-y-0' : 'space-y-2'}>
         {sortedSummaries.length === 0 ? (
           <div className="py-10 text-center text-slate-400 text-xs">
             Không có dữ liệu lượt đi nào trong kỳ này.

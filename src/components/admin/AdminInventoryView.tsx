@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useLayout } from '../../context/LayoutContext';
 import { TaxiCard, CardStatus, CardCondition } from '../../types';
 import { ReturnCardAndBillModal } from './ReturnCardAndBillModal';
 import { DirectDispatchModal } from './DirectDispatchModal';
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 export const AdminInventoryView: React.FC = () => {
+  const { isWide } = useLayout();
   const { currentUser, cards, requests, addCard, editCard, deleteCard, updateCardStatus, releaseCardDirectly } = useApp();
 
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -157,7 +159,7 @@ export const AdminInventoryView: React.FC = () => {
   };
 
   return (
-    <div className="p-4 space-y-4 max-w-xl mx-auto">
+    <div className={isWide ? 'p-6 max-w-6xl mx-auto space-y-4' : 'p-4 space-y-4 max-w-xl mx-auto'}>
       {/* Top Header & Add Card */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
         <div>
@@ -300,7 +302,7 @@ export const AdminInventoryView: React.FC = () => {
       </div>
 
       {/* Cards List */}
-      <div className="space-y-2">
+      <div className={isWide ? 'grid grid-cols-2 xl:grid-cols-3 gap-3 space-y-0' : 'space-y-2'}>
         {filteredCards.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
             Không tìm thấy thẻ nào ở bộ lọc này.

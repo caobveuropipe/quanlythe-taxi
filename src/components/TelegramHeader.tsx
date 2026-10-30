@@ -8,6 +8,8 @@ import {
   Globe,
   UserCheck,
   Users,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface TelegramHeaderProps {
@@ -16,6 +18,8 @@ interface TelegramHeaderProps {
   onOpenUserApprovals?: () => void;
   onOpenUserManagement?: () => void;
   pendingUsersCount?: number;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
 export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
@@ -24,6 +28,8 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
   onOpenUserApprovals,
   onOpenUserManagement,
   pendingUsersCount = 0,
+  isExpanded = false,
+  onToggleExpand,
 }) => {
   const { currentUser } = useApp();
   const [showProfile, setShowProfile] = useState(false);
@@ -67,6 +73,18 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
             >
               <UserCheck className="w-3 h-3" />
               <span>Duyệt ({pendingUsersCount})</span>
+            </button>
+          )}
+
+          {/* Nút mở rộng / thu gọn - chỉ hiện trên màn hình PC */}
+          {onToggleExpand && (
+            <button
+              onClick={onToggleExpand}
+              title={isExpanded ? 'Thu gọn về dạng Mini App' : 'Mở rộng giao diện PC'}
+              className="hidden lg:flex h-8 px-2 items-center gap-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors"
+            >
+              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <span>{isExpanded ? 'Thu gọn' : 'Mở rộng'}</span>
             </button>
           )}
 
