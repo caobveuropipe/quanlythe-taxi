@@ -22,7 +22,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
-import { getSystemOcrStatus } from '../../services/geminiOcrService';
+import { getSystemOcrStatus, type SystemOcrStatus } from '../../services/geminiOcrService';
 import { AnnouncementPopup } from '../common/AnnouncementPopup';
 import {
   getCustomGeminiKey,
@@ -34,7 +34,7 @@ interface AdminSettingsViewProps {
 }
 
 export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUserManagement }) => {
-  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<SystemOcrStatus | null>(null);
   useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
   const { config, updateConfig, users, leaderMappings, cards, updateUserProfile } = useApp();
 
@@ -306,7 +306,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onOpenUser
               </span>
             ) : (
               <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 rounded">
-                {systemOcrConfigured === false ? '⚠️ OCR hệ thống chưa cấu hình' : '⚡ Key hệ thống dùng chung (giới hạn theo phút tại máy chủ)'}
+                {systemOcrConfigured === 'unconfigured' ? '⚠️ OCR hệ thống chưa cấu hình' : systemOcrConfigured === 'unavailable' ? '⚠️ Máy chủ OCR không phản hồi' : '⚡ Key hệ thống dùng chung (giới hạn theo phút tại máy chủ)'}
               </span>
             )}
           </div>

@@ -13,12 +13,13 @@ import {
   MapPin,
   DollarSign,
   Upload,
+  Camera,
   Sparkles,
   Key,
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { scanTaxiReceipt, getSystemOcrStatus } from '../../services/geminiOcrService';
+import { scanTaxiReceipt, getSystemOcrStatus, type SystemOcrStatus } from '../../services/geminiOcrService';
 import { getCustomGeminiKey } from '../../utils/geminiKeyStorage';
 import { AdminOcrKeyModal } from './AdminOcrKeyModal';
 
@@ -55,7 +56,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
   const [ocrMessage, setOcrMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [keyUpdateTick, setKeyUpdateTick] = useState(0);
-  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<SystemOcrStatus | null>(null);
   React.useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
 
   const maxSpend = config.maxSpendPerTrip;
@@ -120,6 +121,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
@@ -292,7 +294,7 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
                 >
                   <Key className="w-3 h-3" />
                   <span>
-                    {currentCustomKey ? 'Key riêng' : systemOcrConfigured === false ? 'OCR chưa cấu hình' : 'Key hệ thống'}
+                    {currentCustomKey ? 'Key riêng' : systemOcrConfigured === 'unconfigured' ? 'OCR chưa cấu hình' : systemOcrConfigured === 'unavailable' ? 'Máy chủ OCR lỗi' : 'Key hệ thống'}
                   </span>
                 </button>
 
@@ -364,24 +366,22 @@ export const ReturnCardAndBillModal: React.FC<ReturnCardAndBillModalProps> = ({
                 )}
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-slate-900/50 cursor-pointer transition-colors relative">
-                <div className="flex items-center gap-1.5 text-blue-600 mb-1">
-                  <Upload className="w-4 h-4" />
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <div className="p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-center space-y-2">
+                <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                  Thêm ảnh hóa đơn để <strong>AI tự điền số tiền</strong>
                 </div>
-                <span className="text-xs font-medium text-slate-800 dark:text-slate-200 text-center">
-                  Tải hoặc chụp ảnh hóa đơn để <strong>AI tự điền số tiền</strong>
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5">
-                  Hỗ trợ JPG, PNG, WEBP · Tự động đọc cước xe, điểm đón/trả
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+                <div className="flex justify-center gap-2">
+                  <label className="relative inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-xs font-semibold cursor-pointer">
+                    <Camera className="w-4 h-4" /> Chụp ảnh
+                    <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Chụp ảnh hóa đơn bằng camera" />
+                  </label>
+                  <label className="relative inline-flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold cursor-pointer">
+                    <Upload className="w-4 h-4" /> Chọn ảnh
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Chọn ảnh hóa đơn từ thư viện" />
+                  </label>
+                </div>
+                <div className="text-[10px] text-slate-400">Hỗ trợ JPG, PNG, WEBP</div>
+              </div>
             )}
           </div>
 

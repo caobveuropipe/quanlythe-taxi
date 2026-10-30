@@ -19,6 +19,20 @@ export interface OcrScanResponse {
   message?: string;
 }
 
+async function readOcrResponse(response: Response): Promise<any> {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    throw new Error(response.status >= 500
+      ? 'Máy chủ OCR đang gặp lỗi hoặc chưa triển khai đúng. Vui lòng báo quản trị viên kiểm tra Vercel Functions và cấu hình OCR.'
+      : 'Máy chủ OCR trả về dữ liệu không hợp lệ. Vui lòng thử lại sau.');
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new Error('Máy chủ OCR trả về JSON không hợp lệ. Vui lòng thử lại sau.');
+  }
+}
+
 export async function testGeminiApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
   if (!apiKey || apiKey.trim().length < 10) {
     return { success: false, message: 'Độ dài API Key không hợp lệ.' };
@@ -35,14 +49,17 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ success: boole
   }
 }
 
-export async function getSystemOcrStatus(): Promise<boolean> {
+export type SystemOcrStatus = 'configured' | 'unconfigured' | 'unavailable';
+
+export async function getSystemOcrStatus(): Promise<SystemOcrStatus> {
   try {
     const res = await fetch('/api/ocr');
-    if (!res.ok) return false;
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return 'unavailable';
     const data = await res.json();
-    return data.configured === true;
+    if (typeof data.configured !== 'boolean') return 'unavailable';
+    return data.configured ? 'configured' : 'unconfigured';
   } catch {
-    return false;
+    return 'unavailable';
   }
 }
 
@@ -59,7 +76,7 @@ export async function scanTaxiReceipt(fileOrBase64: File | string): Promise<OcrS
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: base64Data, mimeType, customApiKey: customKey || undefined, telegramInitData }),
     });
-    const result = await apiRes.json();
+    const result = await readOcrResponse(apiRes);
     if (!apiRes.ok || !result.success) {
       return { success: false, message: result.message || 'Không thể quét hóa đơn lúc này.' };
     }

@@ -15,7 +15,7 @@ import {
   removeCustomGeminiKey,
   maskApiKey,
 } from '../../utils/geminiKeyStorage';
-import { getSystemOcrStatus, testGeminiApiKey } from '../../services/geminiOcrService';
+import { getSystemOcrStatus, testGeminiApiKey, type SystemOcrStatus } from '../../services/geminiOcrService';
 
 interface AdminOcrKeyModalProps {
   onClose: () => void;
@@ -23,7 +23,7 @@ interface AdminOcrKeyModalProps {
 }
 
 export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onKeyUpdated }) => {
-  const [systemOcrConfigured, setSystemOcrConfigured] = useState<boolean | null>(null);
+  const [systemOcrConfigured, setSystemOcrConfigured] = useState<SystemOcrStatus | null>(null);
   useEffect(() => { getSystemOcrStatus().then(setSystemOcrConfigured); }, []);
   const currentKey = getCustomGeminiKey();
   const [inputKey, setInputKey] = useState('');
@@ -98,7 +98,7 @@ export const AdminOcrKeyModal: React.FC<AdminOcrKeyModalProps> = ({ onClose, onK
               </span>
             ) : (
               <span className="px-2 py-0.5 font-semibold text-[10px] bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300">
-                {systemOcrConfigured === false ? '⚠️ OCR hệ thống chưa cấu hình' : '⚡ Key Hệ Thống dùng chung'}
+                {systemOcrConfigured === 'unconfigured' ? '⚠️ OCR hệ thống chưa cấu hình' : systemOcrConfigured === 'unavailable' ? '⚠️ Máy chủ OCR không phản hồi' : '⚡ Key Hệ Thống dùng chung'}
               </span>
             )}
           </div>
