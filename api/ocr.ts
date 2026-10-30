@@ -129,13 +129,17 @@ BẮT BUỘC trả về DUY NHẤT một chuỗi JSON thuần túy (không kèm 
         },
       ],
       generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 500,
+        maxOutputTokens: 1024,
       },
     };
 
+    // Tự chuyển cấu hình cũ để các deployment chưa cập nhật biến môi trường vẫn quét được.
+    const configuredModel = (process.env.OCR_GEMINI_MODEL || '').trim().replace(/^models\//, '');
+    const model = configuredModel && configuredModel !== 'gemini-2.5-flash-lite'
+      ? configuredModel
+      : 'gemini-3.5-flash-lite';
     // Một model cố định giúp giới hạn lượt gọi theo đúng quota của project.
-    const candidateModels = [process.env.OCR_GEMINI_MODEL || 'gemini-2.5-flash-lite'];
+    const candidateModels = [model];
     let lastError: any = null;
     let rawText = '';
 
@@ -175,7 +179,10 @@ BẮT BUỘC trả về DUY NHẤT một chuỗi JSON thuần túy (không kèm 
           continue;
         }
 
-        rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        rawText = (result.candidates?.[0]?.content?.parts || [])
+          .filter((part: any) => !part.thought && typeof part.text === 'string')
+          .map((part: any) => part.text)
+          .join('');
         if (rawText) break;
       } catch (err: any) {
         lastError = err;
