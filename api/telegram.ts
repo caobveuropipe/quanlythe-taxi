@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { timingSafeEqual } from 'crypto';
-import { verifyTelegramInitData } from '../server/ocrAuth';
+import { verifyTelegramInitData } from '../server/ocrAuth.js';
 
 function getBotToken(): string {
   return process.env.TELEGRAM_BOT_TOKEN || '';

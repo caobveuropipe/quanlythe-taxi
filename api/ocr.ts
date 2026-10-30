@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
-import { verifyTelegramInitData } from '../server/ocrAuth';
-import { reserveSystemOcrCall } from '../server/ocrQuota';
+import { verifyTelegramInitData } from '../server/ocrAuth.js';
+import { reserveSystemOcrCall } from '../server/ocrQuota.js';
 
 // Cache đơn giản theo hash ảnh trong bộ nhớ serverless (tối đa 100 ảnh gần nhất)
 interface CachedResult {
