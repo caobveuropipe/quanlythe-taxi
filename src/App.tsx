@@ -50,6 +50,9 @@ const MainAppContent: React.FC = () => {
           WebApp?: {
             ready: () => void;
             expand: () => void;
+            requestFullscreen?: () => void;
+            exitFullscreen?: () => void;
+            isFullscreen?: boolean;
             setHeaderColor?: (color: string) => void;
             setBackgroundColor?: (color: string) => void;
           };
@@ -72,15 +75,35 @@ const MainAppContent: React.FC = () => {
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
   const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
 
-  // Chế độ mở rộng giao diện PC (ghi nhớ lựa chọn).
-  // Khi người dùng bấm Mở rộng, app sẽ bung rộng kể cả khi chạy trong Telegram Desktop popup
+  // Chế độ mở rộng giao diện PC:
+  // - Nếu mở trên trình duyệt web PC (Chrome, Edge...) có màn hình rộng (>= 1024px) -> Tự động bật Mở rộng 100% ngay từ đầu.
+  // - Hoặc nếu người dùng đã chủ động bấm Mở rộng (lưu trong localStorage).
+  const isDesktopScreen = useMediaQuery('(min-width: 1024px)');
   const [isExpanded, setIsExpanded] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('taxicard_ui_expanded') === '1';
+      const saved = localStorage.getItem('taxicard_ui_expanded');
+      if (saved !== null) {
+        return saved === '1';
+      }
+      // Mặc định: Nếu là màn hình PC rộng thì tự động mở rộng luôn
+      return typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
     } catch {
       return false;
     }
   });
+
+  // Tự động kích hoạt khi màn hình máy tính đạt chuẩn nếu người dùng chưa từng tắt thủ công
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('taxicard_ui_expanded');
+      if (saved === null && isDesktopScreen) {
+        setIsExpanded(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [isDesktopScreen]);
+
   const isWide = isExpanded;
   const toggleExpanded = () => {
     setIsExpanded((prev) => {
@@ -93,6 +116,30 @@ const MainAppContent: React.FC = () => {
       return next;
     });
   };
+
+  // Sync fullscreen với Telegram Desktop khi bật/tắt mở rộng (Telegram Bot API 8.0+)
+  useEffect(() => {
+    try {
+      const tg = (window as unknown as {
+        Telegram?: {
+          WebApp?: {
+            requestFullscreen?: () => void;
+            exitFullscreen?: () => void;
+            isFullscreen?: boolean;
+          };
+        };
+      }).Telegram?.WebApp;
+      if (tg) {
+        if (isExpanded && tg.requestFullscreen) {
+          tg.requestFullscreen();
+        } else if (!isExpanded && tg.exitFullscreen && tg.isFullscreen) {
+          tg.exitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn('Telegram Fullscreen toggle warning:', e);
+    }
+  }, [isExpanded]);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
