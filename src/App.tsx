@@ -76,45 +76,14 @@ const MainAppContent: React.FC = () => {
   const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
 
   // Chế độ mở rộng giao diện PC:
-  // - Nếu mở trên trình duyệt web PC (Chrome, Edge...) có màn hình rộng (>= 1024px) -> Tự động bật Mở rộng 100% ngay từ đầu.
-  // - Hoặc nếu người dùng đã chủ động bấm Mở rộng (lưu trong localStorage).
+  // - Nếu màn hình là Desktop/Web PC (>= 1024px) -> LUÔN LUÔN tự động mở rộng 100%, không cần bấm gì.
+  // - Người dùng vẫn có thể bấm nút để chuyển đổi thủ công nếu muốn.
   const isDesktopScreen = useMediaQuery('(min-width: 1024px)');
-  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('taxicard_ui_expanded');
-      if (saved !== null) {
-        return saved === '1';
-      }
-      // Mặc định: Nếu là màn hình PC rộng thì tự động mở rộng luôn
-      return typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
-    } catch {
-      return false;
-    }
-  });
+  const [manualExpandOverride, setManualExpandOverride] = useState<boolean | null>(null);
 
-  // Tự động kích hoạt khi màn hình máy tính đạt chuẩn nếu người dùng chưa từng tắt thủ công
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('taxicard_ui_expanded');
-      if (saved === null && isDesktopScreen) {
-        setIsExpanded(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [isDesktopScreen]);
-
-  const isWide = isExpanded;
+  const isWide = manualExpandOverride !== null ? manualExpandOverride : isDesktopScreen;
   const toggleExpanded = () => {
-    setIsExpanded((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('taxicard_ui_expanded', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    setManualExpandOverride(!isWide);
   };
 
   // Sync fullscreen với Telegram Desktop khi bật/tắt mở rộng (Telegram Bot API 8.0+)
@@ -130,16 +99,16 @@ const MainAppContent: React.FC = () => {
         };
       }).Telegram?.WebApp;
       if (tg) {
-        if (isExpanded && tg.requestFullscreen) {
+        if (isWide && tg.requestFullscreen) {
           tg.requestFullscreen();
-        } else if (!isExpanded && tg.exitFullscreen && tg.isFullscreen) {
+        } else if (!isWide && tg.exitFullscreen && tg.isFullscreen) {
           tg.exitFullscreen();
         }
       }
     } catch (e) {
       console.warn('Telegram Fullscreen toggle warning:', e);
     }
-  }, [isExpanded]);
+  }, [isWide]);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
