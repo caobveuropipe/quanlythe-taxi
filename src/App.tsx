@@ -72,7 +72,8 @@ const MainAppContent: React.FC = () => {
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
   const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
 
-  // Chế độ mở rộng giao diện PC (ghi nhớ lựa chọn). Chỉ có hiệu lực khi màn hình >= 1024px
+  // Chế độ mở rộng giao diện PC (ghi nhớ lựa chọn).
+  // Khi người dùng bấm Mở rộng, app sẽ bung rộng kể cả khi chạy trong Telegram Desktop popup
   const [isExpanded, setIsExpanded] = useState<boolean>(() => {
     try {
       return localStorage.getItem('taxicard_ui_expanded') === '1';
@@ -80,8 +81,7 @@ const MainAppContent: React.FC = () => {
       return false;
     }
   });
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
-  const isWide = isExpanded && isDesktop;
+  const isWide = isExpanded;
   const toggleExpanded = () => {
     setIsExpanded((prev) => {
       const next = !prev;
@@ -154,7 +154,7 @@ const MainAppContent: React.FC = () => {
 
   // Tab "Đăng ký": PC mở rộng hiển thị form (trái) + danh sách yêu cầu của tôi (phải)
   const registerTab = isWide ? (
-    <div className="grid grid-cols-[400px_minmax(0,1fr)] gap-8 p-6 max-w-6xl mx-auto items-start">
+    <div className="grid grid-cols-1 md:grid-cols-[380px_minmax(0,1fr)] gap-6 p-4 sm:p-6 max-w-6xl mx-auto items-start">
       <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
       <div className="min-w-0">
         <h2 className="text-sm font-bold text-slate-800 mb-3">Yêu cầu của tôi</h2>
