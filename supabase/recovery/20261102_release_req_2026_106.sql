@@ -5,12 +5,6 @@
 
 BEGIN;
 
--- The live taxi_requests table predates these release audit columns.
-ALTER TABLE public.taxi_requests
-  ADD COLUMN IF NOT EXISTS released_reason text,
-  ADD COLUMN IF NOT EXISTS released_by text,
-  ADD COLUMN IF NOT EXISTS released_at timestamptz;
-
 DO $$
 DECLARE
   v_request public.taxi_requests%ROWTYPE;
@@ -63,10 +57,7 @@ BEGIN
   SET status = 'card_released',
       is_waitlisted = false,
       reserved_card_code = NULL,
-      actual_card_code = NULL,
-      released_reason = 'Khôi phục dữ liệu: cả hai thẻ chưa được bàn giao; Admin xác nhận không giữ thẻ',
-      released_by = 'Manual recovery',
-      released_at = now()
+      actual_card_code = NULL
   WHERE id = 'REQ-2026-106';
 END;
 $$;
