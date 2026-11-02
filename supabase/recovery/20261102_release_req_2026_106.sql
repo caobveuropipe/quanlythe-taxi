@@ -5,6 +5,12 @@
 
 BEGIN;
 
+-- The live taxi_requests table predates these release audit columns.
+ALTER TABLE public.taxi_requests
+  ADD COLUMN IF NOT EXISTS released_reason text,
+  ADD COLUMN IF NOT EXISTS released_by text,
+  ADD COLUMN IF NOT EXISTS released_at timestamptz;
+
 DO $$
 DECLARE
   v_request public.taxi_requests%ROWTYPE;

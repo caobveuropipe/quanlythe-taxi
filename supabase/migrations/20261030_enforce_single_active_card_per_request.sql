@@ -3,6 +3,15 @@
 --              cung cấp bộ 3 RPC nguyên tử phân cấp khóa chống deadlock,
 --              tự động gán thẻ từ hàng chờ và thiết lập ranh giới bảo mật service_role.
 
+BEGIN;
+
+-- The production table predates these fields used by the atomic workflow.
+ALTER TABLE public.taxi_requests
+  ADD COLUMN IF NOT EXISTS handover_ready_at timestamptz,
+  ADD COLUMN IF NOT EXISTS released_reason text,
+  ADD COLUMN IF NOT EXISTS released_by text,
+  ADD COLUMN IF NOT EXISTS released_at timestamptz;
+
 -- 1. Unique Partial Index: Ngăn chặn 1 request giữ > 1 thẻ active (reserved hoặc in_use)
 -- Existing duplicate rows must be reconciled against the physical cards first.
 -- The index intentionally fails rather than silently releasing a card in someone's possession.
@@ -261,7 +270,7 @@ BEGIN
   END IF;
 
   IF v_operator.role NOT IN ('admin', 'admin_hr') AND COALESCE(v_operator.telegram_id, '') <> '5139629652' THEN
-    IF v_target_req.employee_id IS DISTINCT FROM v_operator.id AND v_target_req.employee_code IS DISTINCT FROM v_operator.employee_code THEN
+    IF v_target_req.employee_id IS DISTINCT FROM v_operator.id AND v_target_req.employee_code IS DISTINCT FROM v_operator.code THEN
       RAISE EXCEPTION 'Unauthorized: cannot cancel request of another employee' USING ERRCODE = '42501';
     END IF;
   END IF;
@@ -489,4 +498,6 @@ GRANT EXECUTE ON FUNCTION public.cancel_taxi_request_atomic(text, text, text) TO
 
 REVOKE ALL ON FUNCTION public.release_taxi_card_atomic(text, text, text, text, text) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.release_taxi_card_atomic(text, text, text, text, text) TO service_role;
+
+COMMIT;
 
