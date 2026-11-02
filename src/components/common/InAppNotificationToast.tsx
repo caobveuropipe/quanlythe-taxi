@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CheckCircle2, AlertCircle, Info, X, ExternalLink, Bell } from 'lucide-react';
 
 export interface InAppToastMessage {
@@ -11,11 +11,14 @@ export interface InAppToastMessage {
   timestamp?: number;
   actionLabel?: string;
   onAction?: () => void;
+  destination?: 'admin_actions' | 'admin_user_approvals' | 'leader_approvals' | 'my_requests';
+  requestId?: string;
 }
 
 interface InAppNotificationToastProps {
   notifications: InAppToastMessage[];
   onDismiss: (id: string) => void;
+  onOpen: (notification: InAppToastMessage) => void;
 }
 
 // Web Audio API Sound Chime
@@ -48,9 +51,15 @@ const playNotificationSound = () => {
 export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
   notifications,
   onDismiss,
+  onOpen,
 }) => {
+  const soundedIds = useRef<Set<string>>(new Set());
+  const latestId = notifications[0]?.id;
+  const notificationIds = notifications.map((notification) => notification.id).join(',');
+
   useEffect(() => {
-    if (notifications.length > 0) {
+    if (latestId && !soundedIds.current.has(latestId)) {
+      soundedIds.current.add(latestId);
       playNotificationSound();
       try {
         const tg = (window as any).Telegram?.WebApp;
@@ -59,7 +68,14 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
         }
       } catch {}
     }
-  }, [notifications.length]);
+  }, [latestId]);
+
+  useEffect(() => {
+    const timers = notifications.map((notification) =>
+      window.setTimeout(() => onDismiss(notification.id), 10000)
+    );
+    return () => timers.forEach(window.clearTimeout);
+  }, [notificationIds, onDismiss]);
 
   if (notifications.length === 0) return null;
 
@@ -91,14 +107,23 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
             key={notif.id}
             className={`pointer-events-auto rounded-xl p-3 border shadow-2xl backdrop-blur-md flex items-start gap-3 animate-in slide-in-from-top-4 fade-in duration-300 ${bgBorder}`}
           >
-            <div className={`mt-0.5 shrink-0 p-1 rounded-full bg-white/10 ${iconColor}`}>
-              {isSuccess && <CheckCircle2 className="w-5 h-5" />}
-              {isWarning && <AlertCircle className="w-5 h-5" />}
-              {isError && <AlertCircle className="w-5 h-5" />}
-              {!isSuccess && !isWarning && !isError && <Bell className="w-5 h-5" />}
-            </div>
-
-            <div className="flex-1 min-w-0 pr-1">
+            <button
+              type="button"
+              disabled={!notif.destination}
+              onClick={() => {
+                onOpen(notif);
+                onDismiss(notif.id);
+              }}
+              className={`flex flex-1 min-w-0 items-start gap-3 text-left ${notif.destination ? 'cursor-pointer' : 'cursor-default'}`}
+              aria-label={notif.destination ? `Mở việc cần xử lý: ${notif.title}` : undefined}
+            >
+              <div className={`mt-0.5 shrink-0 p-1 rounded-full bg-white/10 ${iconColor}`}>
+                {isSuccess && <CheckCircle2 className="w-5 h-5" />}
+                {isWarning && <AlertCircle className="w-5 h-5" />}
+                {isError && <AlertCircle className="w-5 h-5" />}
+                {!isSuccess && !isWarning && !isError && <Bell className="w-5 h-5" />}
+              </div>
+              <div className="flex-1 min-w-0 pr-1">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <h4 className="text-xs font-bold leading-tight truncate">{notif.title}</h4>
                 <span className="text-[10px] opacity-60 shrink-0">vừa xong</span>
@@ -106,25 +131,16 @@ export const InAppNotificationToast: React.FC<InAppNotificationToastProps> = ({
               <p className="text-[11px] leading-relaxed opacity-90 line-clamp-2">
                 {notif.description || notif.message}
               </p>
-
-              {notif.actionLabel && notif.onAction && (
-                <button
-                  onClick={() => {
-                    notif.onAction?.();
-                    onDismiss(notif.id);
-                  }}
-                  className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white/15 hover:bg-white/25 text-[11px] font-semibold text-white transition-colors"
-                >
-                  <span>{notif.actionLabel}</span>
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+              {notif.destination && <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold underline">Chạm để mở <ExternalLink className="w-3 h-3" /></span>}
+              </div>
+            </button>
 
             <button
+              type="button"
               onClick={() => onDismiss(notif.id)}
-              className="shrink-0 p-1 text-white/50 hover:text-white rounded-lg transition-colors -mr-1 -mt-1"
+              className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-black/10 rounded-lg transition-colors -mr-1 -mt-1"
               title="Đóng thông báo"
+              aria-label="Đóng thông báo"
             >
               <X className="w-4 h-4" />
             </button>

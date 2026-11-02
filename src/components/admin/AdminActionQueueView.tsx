@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { formatVietnameseDateTime } from '../../utils/dateUtils';
 
-export const AdminActionQueueView: React.FC = () => {
+export const AdminActionQueueView: React.FC<{ focusedRequest?: { id: string; token: number } | null }> = ({ focusedRequest }) => {
   const {
     currentUser,
     requests,
@@ -77,6 +77,20 @@ export const AdminActionQueueView: React.FC = () => {
   type SearchScope = 'name' | 'card' | 'all';
   const [searchQuery, setSearchQuery] = useState('');
   const [searchScope, setSearchScope] = useState<SearchScope>('name');
+
+  useEffect(() => {
+    if (!focusedRequest) return;
+    setSearchQuery(focusedRequest.id);
+    setSearchScope('all');
+    const request = requests.find((item) => item.id === focusedRequest.id);
+    if (request?.status === 'holding_card' || request?.status === 'returned_pending_bill' || request?.status === 'overbudget_pending_hr') {
+      setTwoTabsTab('collect');
+      setTwoTabsCollectFilter('all');
+    } else {
+      setTwoTabsTab('dispatch');
+      setTwoTabsDispatchFilter('all');
+    }
+  }, [focusedRequest?.token]);
 
   // Chuẩn hóa tiếng Việt bỏ dấu để tìm kiếm chính xác và linh hoạt
   const removeVietnameseTones = (str: string): string => {

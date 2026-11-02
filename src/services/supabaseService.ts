@@ -281,12 +281,27 @@ export const supabaseService = {
   // Upsert user
   async upsertUser(user: UserProfile) {
     try {
-      const row = toDbUser(user);
-      const { error } = await supabase.from('users').upsert(row);
-      if (error) console.warn('Supabase upsertUser error:', error);
-    } catch (e) {
-      console.warn('Supabase upsertUser error:', e);
+      await this.upsertUserChecked(user);
+    } catch (error) {
+      console.warn('Supabase upsertUser error:', error);
     }
+  },
+
+  async upsertUserChecked(user: UserProfile) {
+    const { error } = await supabase.from('users').upsert(toDbUser(user));
+    if (error) throw error;
+  },
+
+  // Approvals must update an existing profile and confirm that a row was changed.
+  async setUserApproval(userId: string, role: UserProfile['role'], isLeader: boolean, leaderId?: string) {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ role, is_leader: isLeader, leader_id: leaderId || null })
+      .eq('id', userId)
+      .eq('role', 'pending')
+      .select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('Hồ sơ không còn ở trạng thái chờ duyệt hoặc không có quyền cập nhật.');
   },
 
   // Delete user

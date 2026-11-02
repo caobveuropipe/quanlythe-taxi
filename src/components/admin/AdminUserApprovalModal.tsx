@@ -27,7 +27,8 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
   const pendingUsers = users.filter((u) => u.role === 'pending');
 
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [roleSelections, setRoleSelections] = useState<{ [userId: string]: UserRole }>({});
 
   if (!isOpen) return null;
@@ -65,10 +66,10 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
         </div>
 
         {feedback && (
-          <div className="mt-3 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between shrink-0">
+          <div className={`mt-3 p-2.5 border text-xs flex items-center justify-between shrink-0 ${feedback.success ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200' : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'}`}>
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{feedback}</span>
+              {feedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+              <span>{feedback.message}</span>
             </div>
             <button onClick={() => setFeedback(null)} className="text-slate-400 font-bold text-xs">
               ✕
@@ -194,9 +195,15 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
-                          const res = rejectUser(candidate.id);
-                          setFeedback(res.message);
+                        disabled={busyUserId !== null}
+                        onClick={async () => {
+                          setBusyUserId(candidate.id);
+                          try {
+                            const res = await rejectUser(candidate.id);
+                            setFeedback(res);
+                          } finally {
+                            setBusyUserId(null);
+                          }
                         }}
                         className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded transition-colors inline-flex items-center gap-1"
                       >
@@ -205,13 +212,19 @@ export const AdminUserApprovalModal: React.FC<AdminUserApprovalModalProps> = ({
                       </button>
 
                       <button
-                        onClick={() => {
-                          const selectedRole = roleSelections[candidate.id] || 'employee';
-                          const res = approveUser(candidate.id, {
-                            role: selectedRole,
-                            createNewLeaderFromName: leaderMissing ? candidate.leaderName : undefined,
-                          });
-                          setFeedback(res.message);
+                        disabled={busyUserId !== null}
+                        onClick={async () => {
+                          setBusyUserId(candidate.id);
+                          try {
+                            const selectedRole = roleSelections[candidate.id] || 'employee';
+                            const res = await approveUser(candidate.id, {
+                              role: selectedRole,
+                              createNewLeaderFromName: leaderMissing ? candidate.leaderName : undefined,
+                            });
+                            setFeedback(res);
+                          } finally {
+                            setBusyUserId(null);
+                          }
                         }}
                         className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded transition-colors shadow-xs inline-flex items-center gap-1.5"
                       >

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TelegramHeader } from './components/TelegramHeader';
-import { InAppNotificationToast } from './components/common/InAppNotificationToast';
+import { InAppNotificationToast, InAppToastMessage } from './components/common/InAppNotificationToast';
 import { EmployeeRegisterView } from './components/employee/EmployeeRegisterView';
 import { EmployeeRequestsView } from './components/employee/EmployeeRequestsView';
 import { LeaderApprovalsView } from './components/leader/LeaderApprovalsView';
@@ -54,6 +54,7 @@ const MainAppContent: React.FC = () => {
   const [subView, setSubView] = useState<'settings' | 'web_portal' | 'user_management' | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
   const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
+  const [focusedAdminRequest, setFocusedAdminRequest] = useState<{ id: string; token: number } | null>(null);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
@@ -113,6 +114,33 @@ const MainAppContent: React.FC = () => {
     )
   ).length;
 
+  const openNotification = (notification: InAppToastMessage) => {
+    switch (notification.destination) {
+      case 'admin_actions':
+        if (!isAdminOrHR) return;
+        setShowApprovalModal(false);
+        setSubView(null);
+        setActiveTab('actions');
+        if (notification.requestId) {
+          setFocusedAdminRequest({ id: notification.requestId, token: Date.now() });
+        }
+        break;
+      case 'admin_user_approvals':
+        if (isAdminOrHR) setShowApprovalModal(true);
+        break;
+      case 'leader_approvals':
+        if (isLeader && !isAdminOrHR) {
+          setSubView(null);
+          setActiveTab('leader_approvals');
+        }
+        break;
+      case 'my_requests':
+        setSubView(null);
+        setActiveTab('requests');
+        break;
+    }
+  };
+
   return (
     <div className="h-[100dvh] w-full bg-slate-100 text-slate-900 flex flex-col font-sans overflow-hidden">
       {/* Main Viewport Container */}
@@ -125,7 +153,7 @@ const MainAppContent: React.FC = () => {
           }`}
         >
           {/* In-App Realtime Notification Toast */}
-          <InAppNotificationToast notifications={toasts} onDismiss={dismissToast} />
+          <InAppNotificationToast notifications={toasts} onDismiss={dismissToast} onOpen={openNotification} />
 
           {/* Telegram Mini App Top App Bar (Header mờ kính Floating Dock) */}
           <TelegramHeader
@@ -211,7 +239,7 @@ const MainAppContent: React.FC = () => {
               {/* If Admin / HR View */}
               {isAdminOrHR && (
                 <>
-                  {activeTab === 'actions' && <AdminActionQueueView />}
+                  {activeTab === 'actions' && <AdminActionQueueView focusedRequest={focusedAdminRequest} />}
                   {activeTab === 'inventory' && <AdminInventoryView />}
                   {activeTab === 'reports' && <AdminReportsView />}
                   {activeTab === 'register' && (
@@ -309,7 +337,10 @@ const MainAppContent: React.FC = () => {
                 {isAdminOrHR && (
                   <>
                     <button
-                      onClick={() => setActiveTab('actions')}
+                      onClick={() => {
+                        setFocusedAdminRequest(null);
+                        setActiveTab('actions');
+                      }}
                       className={`flex-1 py-1.5 px-2 rounded-full flex items-center justify-center gap-1 text-xs transition-all relative ${
                         activeTab === 'actions'
                           ? 'bg-blue-600 text-white font-bold shadow-md'

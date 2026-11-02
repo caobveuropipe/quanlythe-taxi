@@ -80,7 +80,8 @@ async function editAllTrackedMessages(
   currentChatId?: string | number,
   currentMessageId?: number,
   text: string = '',
-  keepTracker: boolean = false
+  keepTracker: boolean = false,
+  replyMarkup: any = { inline_keyboard: [] }
 ) {
   let tracked: Array<{ chatId: string | number; messageId: number }> = [];
   try {
@@ -112,7 +113,7 @@ async function editAllTrackedMessages(
   if (tracked.length > 0) {
     const editResults = await Promise.all(
       tracked.map((m) =>
-        editMessageText(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => null)
+        editMessageText(m.chatId, m.messageId, text, replyMarkup).catch(() => null)
       )
     );
 
@@ -410,7 +411,16 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json({ ok: true });
           }
 
-          await supabase.from('users').update({ role: grantedRole, is_leader: isLeader }).eq('id', userId);
+          const { data: approvedRows, error: approveError } = await supabase
+            .from('users')
+            .update({ role: grantedRole, is_leader: isLeader })
+            .eq('id', userId)
+            .eq('role', targetUser.role)
+            .select('id');
+          if (approveError || !approvedRows?.length) {
+            await answerCallbackQuery(cb.id, `❌ Không thể lưu phê duyệt: ${approveError?.message || 'Hồ sơ đã thay đổi hoặc không có quyền cập nhật'}`);
+            return res.status(200).json({ ok: true });
+          }
           const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : 'Nhân sự';
           await answerCallbackQuery(cb.id, `✅ Đã phê duyệt ${targetUser.name} với vai trò ${roleLabel}!`);
 
@@ -460,7 +470,16 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json({ ok: true });
           }
 
-          await supabase.from('users').update({ role: 'rejected' }).eq('id', userId);
+          const { data: rejectedRows, error: rejectError } = await supabase
+            .from('users')
+            .update({ role: 'rejected' })
+            .eq('id', userId)
+            .eq('role', targetUser.role)
+            .select('id');
+          if (rejectError || !rejectedRows?.length) {
+            await answerCallbackQuery(cb.id, `❌ Không thể lưu từ chối: ${rejectError?.message || 'Hồ sơ đã thay đổi hoặc không có quyền cập nhật'}`);
+            return res.status(200).json({ ok: true });
+          }
           await answerCallbackQuery(cb.id, `❌ Đã từ chối nhân sự ${targetUser.name}!`);
 
           // Sửa trực tiếp toàn bộ tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm
@@ -559,7 +578,8 @@ export default async function handler(req: any, res: any) {
             cb.message?.chat?.id,
             cb.message?.message_id,
             `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - ĐƯA VÀO HÀNG CHỜ)</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Người duyệt: <b>${currentOperatorName}</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ trả vào kho)</b>`,
-            true
+            true,
+            { inline_keyboard: [[{ text: '💳 Cấp thẻ khi kho có thẻ rảnh', callback_data: `approve_req_${reqId}` }]] }
           );
 
           const { data: targetReq } = await supabase.from('taxi_requests').select('*').eq('id', reqId).maybeSingle();

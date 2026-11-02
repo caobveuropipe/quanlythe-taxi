@@ -111,8 +111,8 @@ interface AppContextType {
   approveUser: (
     userId: string,
     options?: { createNewLeaderFromName?: string; role?: UserRole }
-  ) => { success: boolean; message: string };
-  rejectUser: (userId: string) => { success: boolean; message: string };
+  ) => Promise<{ success: boolean; message: string }>;
+  rejectUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserProfile: (
     userId: string,
     updates: Partial<UserProfile>
@@ -325,6 +325,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           title: 'Thành viên mới đăng ký 👤',
           message: `${u.name} (${u.department || 'Chưa rõ PB'}) đang chờ duyệt tài khoản.`,
           roleTarget: 'admin',
+          destination: 'admin_user_approvals',
         });
       }
     }
@@ -354,6 +355,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 title: 'Đơn mượn thẻ mới 🚖',
                 message: `${req.employeeName} (${req.department}): ${req.destination || req.purpose}`,
                 roleTarget: 'admin',
+                destination: 'admin_actions',
+                requestId: req.id,
               });
             }
             // Notify Leader if pending leader approval
@@ -367,6 +370,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 title: 'Đơn cần Leader duyệt 📋',
                 message: `${req.employeeName} gửi yêu cầu: ${req.destination || req.purpose}`,
                 roleTarget: 'leader',
+                destination: 'leader_approvals',
+                requestId: req.id,
               });
             }
           }
@@ -430,6 +435,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               title: 'Leader đã phê duyệt đơn 🎯',
               message: `Leader đã duyệt đơn của ${req.employeeName}. Sẵn sàng cấp thẻ!`,
               roleTarget: 'admin',
+              destination: 'admin_actions',
+              requestId: req.id,
             });
           }
         }
@@ -796,8 +803,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Helper: Đồng bộ sửa tin nhắn Telegram và xóa nút khi đơn đã xử lý
-  const syncEditTelegramMessages = async (trackId: string, text: string, keepTracker: boolean = false) => {
+  // Update tracked admin messages; waitlisted requests keep a retry action.
+  const syncEditTelegramMessages = async (trackId: string, text: string, keepTracker: boolean = false, replyMarkup: any = { inline_keyboard: [] }) => {
     try {
       const { data: meta } = await supabase
         .from('users')
@@ -809,7 +816,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const tracked: Array<{ chatId: string | number; messageId: number }> = JSON.parse(meta.telegram_username);
         const editResults = await Promise.all(
           tracked.map((m) =>
-            secureEditTelegramMessage(m.chatId, m.messageId, text, { inline_keyboard: [] }).catch(() => null)
+            secureEditTelegramMessage(m.chatId, m.messageId, text, replyMarkup).catch(() => null)
           )
         );
         if (!keepTracker) {
@@ -1581,7 +1588,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncEditTelegramMessages(
         `msg_track_req_${requestId}`,
         `⏳ <b>ĐÃ DUYỆT (HẾT THẺ - XẾP HÀNG CHỜ) BỞI ${operatorName}!</b>\n\n• Mã yêu cầu: <code>${requestId}</code>\n• Người mượn: <b>${target.employeeName}</b>\n• Người duyệt: <b>${operatorName} (qua Mini App)</b>\n• Trạng thái: <b>Chờ thẻ (Sẽ tự động cấp khi có thẻ hoàn trả)</b>`,
-        true
+        true,
+        { inline_keyboard: [[{ text: '💳 Cấp thẻ khi kho có thẻ rảnh', callback_data: `approve_req_${requestId}` }]] }
       );
 
       notifyEmployeeOrderProgress(
@@ -2435,13 +2443,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const approveUser = (
+  const approveUser = async (
     userId: string,
     options?: { createNewLeaderFromName?: string; role?: UserRole }
   ) => {
     const candidate = users.find((u) => u.id === userId);
     if (!candidate) {
       return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
+    }
+    if (candidate.role !== 'pending') {
+      return { success: false, message: 'Hồ sơ này không còn chờ duyệt.' };
     }
 
     let createdLeader: UserProfile | null = null;
@@ -2484,6 +2495,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       leaderName: candidate.leaderName || (targetLeaderId ? users.find((u) => u.id === targetLeaderId)?.name : undefined),
     };
 
+    try {
+      if (createdLeader) await supabaseService.upsertUserChecked(createdLeader);
+      await supabaseService.setUserApproval(userId, grantedRole, isLeaderRole, targetLeaderId);
+    } catch (error) {
+      return { success: false, message: `Không thể lưu phê duyệt: ${error instanceof Error ? error.message : String(error)}` };
+    }
+
     setUsers((prev) => {
       let next = prev.map((u) => (u.id === userId ? updatedCandidate : u));
       if (createdLeader) {
@@ -2494,12 +2512,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (currentUser.id === userId) {
       setCurrentUser(updatedCandidate);
-    }
-
-    // Sync to Supabase
-    supabaseService.upsertUser(updatedCandidate).catch(() => {});
-    if (createdLeader) {
-      supabaseService.upsertUser(createdLeader).catch(() => {});
     }
 
     const roleLabel = grantedRole === 'leader' ? 'Leader duyệt đơn' : (grantedRole === 'admin' || grantedRole === 'admin_hr' || grantedRole === 'hr') ? 'Quản trị viên (Admin)' : 'Nhân sự';
@@ -2533,10 +2545,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const rejectUser = (userId: string) => {
+  const rejectUser = async (userId: string) => {
     const candidate = users.find((u) => u.id === userId);
     if (!candidate) {
       return { success: false, message: 'Không tìm thấy hồ sơ người dùng!' };
+    }
+    if (candidate.role !== 'pending') {
+      return { success: false, message: 'Hồ sơ này không còn chờ duyệt.' };
     }
 
     const updatedCandidate: UserProfile = {
@@ -2544,8 +2559,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role: 'rejected',
     };
 
+    try {
+      await supabaseService.setUserApproval(userId, 'rejected', Boolean(candidate.isLeader), candidate.leaderId);
+    } catch (error) {
+      return { success: false, message: `Không thể lưu từ chối: ${error instanceof Error ? error.message : String(error)}` };
+    }
     setUsers((prev) => prev.map((u) => (u.id === userId ? updatedCandidate : u)));
-    supabaseService.upsertUser(updatedCandidate).catch(() => {});
 
     // Đồng bộ sửa tin nhắn Telegram của tất cả Admin và gỡ toàn bộ nút bấm
     syncEditTelegramMessages(
