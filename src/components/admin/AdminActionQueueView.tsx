@@ -275,7 +275,7 @@ export const AdminActionQueueView: React.FC = () => {
             <span>{req.employeeName}</span>
             <span className="font-mono text-slate-400 text-[10px]">({req.employeeCode})</span>
           </div>
-          <div className="text-[11px] text-slate-500">{req.department}</div>
+          <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><span>{req.department}</span><span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-600 dark:text-slate-300">{req.id}</span></div>
         </div>
         <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
           Chờ duyệt
@@ -407,7 +407,7 @@ export const AdminActionQueueView: React.FC = () => {
             <span>{req.employeeName}</span>
             <span className="font-mono text-slate-400 text-[10px]">({req.employeeCode})</span>
           </div>
-          <div className="text-[11px] text-slate-500">{req.department}</div>
+          <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><span>{req.department}</span><span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-600 dark:text-slate-300">{req.id}</span></div>
         </div>
         <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300">
           Chờ thẻ
@@ -500,7 +500,7 @@ export const AdminActionQueueView: React.FC = () => {
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-slate-500">{req.department}</div>
+            <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><span>{req.department}</span><span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-600 dark:text-slate-300">{req.id}</span></div>
           </div>
           <div className="text-right space-y-0.5">
             <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold block">
@@ -598,7 +598,7 @@ export const AdminActionQueueView: React.FC = () => {
             <span>{req.employeeName}</span>
             <span className="font-mono text-slate-400 text-[10px]">({req.employeeCode})</span>
           </div>
-          <div className="text-[11px] text-slate-500">{req.department}</div>
+          <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><span>{req.department}</span><span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-600 dark:text-slate-300">{req.id}</span></div>
         </div>
         <div className="text-right">
           <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
@@ -649,7 +649,7 @@ export const AdminActionQueueView: React.FC = () => {
               <span>{req.employeeName}</span>
               <span className="font-mono text-slate-400 text-[10px]">({req.employeeCode})</span>
             </div>
-            <div className="text-[11px] text-slate-500">{req.department}</div>
+            <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><span>{req.department}</span><span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-600 dark:text-slate-300">{req.id}</span></div>
           </div>
           <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
             Vượt hạn mức
