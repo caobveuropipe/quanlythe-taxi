@@ -86,7 +86,7 @@ const MainAppContent: React.FC = () => {
     setManualExpandOverride(!isWide);
   };
 
-  // Sync fullscreen với Telegram Desktop khi bật/tắt mở rộng (Telegram Bot API 8.0+)
+  // Sync fullscreen với Telegram Desktop khi người dùng bấm nút mở rộng (tránh gọi tự động khi mount làm crash Webview Linux)
   useEffect(() => {
     try {
       const tg = (window as unknown as {
@@ -98,7 +98,7 @@ const MainAppContent: React.FC = () => {
           };
         };
       }).Telegram?.WebApp;
-      if (tg) {
+      if (tg && manualExpandOverride !== null) {
         if (isWide && tg.requestFullscreen) {
           tg.requestFullscreen();
         } else if (!isWide && tg.exitFullscreen && tg.isFullscreen) {
@@ -108,7 +108,7 @@ const MainAppContent: React.FC = () => {
     } catch (e) {
       console.warn('Telegram Fullscreen toggle warning:', e);
     }
-  }, [isWide]);
+  }, [isWide, manualExpandOverride]);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||

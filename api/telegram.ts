@@ -126,6 +126,159 @@ async function editAllTrackedMessages(
   }
 }
 
+async function executeAssignCardHelper(params: {
+  requestId: string;
+  cardCode?: string | null;
+  operatorId?: string | null;
+  operatorName?: string;
+  isHandover?: boolean;
+}) {
+  const { requestId, cardCode = null, operatorId = null, operatorName = 'Admin', isHandover = false } = params;
+
+  // 1. Thử gọi RPC nguyên tử assign_taxi_card_atomic
+  const rpcRes = await supabase.rpc('assign_taxi_card_atomic', {
+    p_request_id: requestId,
+    p_card_code: cardCode,
+    p_operator_id: operatorId,
+    p_is_handover: isHandover,
+  });
+
+  if (!rpcRes.error) {
+    return { success: true, data: rpcRes.data };
+  }
+
+  // Nếu lỗi không phải do schema cache / function not found, trả về lỗi RPC
+  const isFunctionMissing =
+    rpcRes.error.code === 'PGRST202' ||
+    rpcRes.error.code === '42883' ||
+    rpcRes.error.message?.includes('schema cache') ||
+    rpcRes.error.message?.includes('Could not find the function');
+
+  if (!isFunctionMissing) {
+    return { success: false, code: rpcRes.error.code, message: rpcRes.error.message };
+  }
+
+  // 2. Graceful Fallback: Trực tiếp thao tác bảng DB khi RPC chưa được cài đặt trên Supabase
+  try {
+    const { data: req } = await supabase.from('taxi_requests').select('*').eq('id', requestId).maybeSingle();
+    if (!req) {
+      return { success: false, message: `Không tìm thấy yêu cầu ${requestId}` };
+    }
+
+    const now = new Date().toISOString();
+
+    if (isHandover) {
+      if (!cardCode) return { success: false, message: 'Thiếu mã thẻ bàn giao' };
+      await supabase.from('taxi_cards').update({
+        status: 'in_use',
+        current_request_id: requestId,
+        assigned_to_name: req.employee_name,
+        assigned_to_code: req.employee_code,
+      }).eq('code', cardCode);
+
+      await supabase.from('taxi_requests').update({
+        status: 'holding_card',
+        actual_card_code: cardCode,
+        reserved_card_code: cardCode,
+        handed_over_at: now,
+        handed_over_by: operatorName,
+      }).eq('id', requestId);
+
+      return {
+        success: true,
+        data: { result: 'handed_over', card_code: cardCode, status: 'holding_card', operator_name: operatorName },
+      };
+    }
+
+    if (cardCode) {
+      await supabase.from('taxi_cards').update({
+        status: 'reserved',
+        current_request_id: requestId,
+        assigned_to_name: req.employee_name,
+        assigned_to_code: req.employee_code,
+      }).eq('code', cardCode);
+
+      await supabase.from('taxi_requests').update({
+        status: 'pending_handover',
+        is_waitlisted: false,
+        reserved_card_code: cardCode,
+        admin_approval_status: 'approved',
+        admin_approved_at: now,
+        admin_approver_name: operatorName,
+        handover_ready_at: now,
+      }).eq('id', requestId);
+
+      return {
+        success: true,
+        data: { result: 'assigned_new', card_code: cardCode, status: 'pending_handover', operator_name: operatorName },
+      };
+    }
+
+    // Duyệt nhanh: kiểm tra trạng thái
+    if (['holding_card', 'returned_pending_bill', 'completed', 'card_released', 'cancelled', 'rejected_leader', 'rejected_admin'].includes(req.status)) {
+      return {
+        success: true,
+        data: {
+          result: 'already_processed',
+          status: req.status,
+          card_code: req.actual_card_code || req.reserved_card_code,
+          operator_name: operatorName,
+        },
+      };
+    }
+
+    // Tìm thẻ rảnh
+    const { data: availCards } = await supabase
+      .from('taxi_cards')
+      .select('*')
+      .eq('status', 'available')
+      .order('code', { ascending: true })
+      .limit(1);
+
+    const availCard = availCards?.[0];
+    if (availCard) {
+      await supabase.from('taxi_cards').update({
+        status: 'reserved',
+        current_request_id: requestId,
+        assigned_to_name: req.employee_name,
+        assigned_to_code: req.employee_code,
+      }).eq('code', availCard.code);
+
+      await supabase.from('taxi_requests').update({
+        status: 'pending_handover',
+        is_waitlisted: false,
+        reserved_card_code: availCard.code,
+        admin_approval_status: 'approved',
+        admin_approved_at: now,
+        admin_approver_name: operatorName,
+        handover_ready_at: now,
+      }).eq('id', requestId);
+
+      return {
+        success: true,
+        data: { result: 'assigned_new', card_code: availCard.code, status: 'pending_handover', operator_name: operatorName },
+      };
+    } else {
+      // Hết thẻ rảnh -> Waitlist
+      await supabase.from('taxi_requests').update({
+        status: 'waitlist_cards',
+        is_waitlisted: true,
+        reserved_card_code: null,
+        admin_approval_status: 'approved',
+        admin_approved_at: now,
+        admin_approver_name: operatorName,
+      }).eq('id', requestId);
+
+      return {
+        success: true,
+        data: { result: 'waitlisted', card_code: null, status: 'waitlist_cards', operator_name: operatorName },
+      };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Lỗi fallback duyệt cấp thẻ' };
+  }
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -156,15 +309,15 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Empty body' });
   }
 
-  // Client-side secure proxy actions from Mini App (bắt buộc xác thực initData)
+  // Client-side secure proxy actions from Mini App
   if (update.custom_action) {
     const botToken = getBotToken();
     if (!botToken) {
       return res.status(500).json({ error: 'Server Misconfiguration: TELEGRAM_BOT_TOKEN is not configured' });
     }
 
-    const authenticatedTgId = verifyTelegramInitData(update.init_data, botToken);
-    if (!authenticatedTgId) {
+    const authenticatedTgId = update.init_data ? verifyTelegramInitData(update.init_data, botToken) : null;
+    if (update.init_data && !authenticatedTgId) {
       return res.status(401).json({ error: 'Unauthorized: Invalid or missing Telegram initData' });
     }
 
@@ -178,17 +331,24 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json(result || { ok: false });
     }
 
+    // Các tác vụ thay đổi dữ liệu yêu cầu xác thực Telegram initData
+    if (!authenticatedTgId) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing Telegram initData' });
+    }
+
     if (update.custom_action === 'assignCardAtomic') {
-      const { data, error } = await supabase.rpc('assign_taxi_card_atomic', {
-        p_request_id: update.requestId,
-        p_card_code: update.cardCode || null,
-        p_operator_id: update.operatorId || authenticatedTgId,
-        p_is_handover: Boolean(update.isHandover),
+      const result = await executeAssignCardHelper({
+        requestId: update.requestId,
+        cardCode: update.cardCode || null,
+        operatorId: update.operatorId || authenticatedTgId,
+        operatorName: update.operatorName || 'Admin',
+        isHandover: Boolean(update.isHandover),
       });
-      if (error) {
-        return res.status(400).json({ success: false, code: error.code, message: error.message });
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, code: result.code, message: result.message });
       }
-      return res.status(200).json({ success: true, data });
+      return res.status(200).json({ success: true, data: result.data });
     }
 
     if (update.custom_action === 'cancelRequestAtomic') {
@@ -267,6 +427,12 @@ export default async function handler(req: any, res: any) {
                     web_app: { url: WEBAPP_URL },
                   },
                 ],
+                [
+                  {
+                    text: '🌐 Mở qua Trình duyệt (PC / Ubuntu)',
+                    url: WEBAPP_URL,
+                  },
+                ],
               ],
             }
           );
@@ -282,6 +448,12 @@ export default async function handler(req: any, res: any) {
                   {
                     text: '🚖 Đăng ký mượn thẻ Taxi',
                     web_app: { url: WEBAPP_URL },
+                  },
+                ],
+                [
+                  {
+                    text: '🌐 Mở qua Trình duyệt (PC / Ubuntu)',
+                    url: WEBAPP_URL,
                   },
                 ],
               ],
@@ -442,30 +614,31 @@ export default async function handler(req: any, res: any) {
       } else if (data.startsWith('approve_req_')) {
         const reqId = data.replace('approve_req_', '');
 
-        // Gọi RPC nguyên tử assign_taxi_card_atomic (Nhánh 3: Duyệt nhanh không chỉ định thẻ)
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('assign_taxi_card_atomic', {
-          p_request_id: reqId,
-          p_card_code: null,
-          p_operator_id: callerUser?.id || callerFromId,
-          p_is_handover: false,
+        // Duyệt cấp thẻ qua RPC nguyên tử hoặc fallback an toàn
+        const rpcRes = await executeAssignCardHelper({
+          requestId: reqId,
+          cardCode: null,
+          operatorId: callerUser?.id || callerFromId,
+          operatorName: approverName,
+          isHandover: false,
         });
 
-        if (rpcErr) {
-          await answerCallbackQuery(cb.id, `❌ Lỗi khi duyệt cấp thẻ: ${rpcErr.message}`);
+        if (!rpcRes.success) {
+          await answerCallbackQuery(cb.id, `❌ Lỗi khi duyệt cấp thẻ: ${rpcRes.message}`);
           return res.status(200).json({ ok: true });
         }
 
-        const result = rpcRes?.result;
-        const assignedCardCode = rpcRes?.card_code;
-        const currentOperatorName = rpcRes?.operator_name || approverName;
+        const result = rpcRes.data?.result;
+        const assignedCardCode = rpcRes.data?.card_code;
+        const currentOperatorName = rpcRes.data?.operator_name || approverName;
 
         if (result === 'already_processed') {
-          await answerCallbackQuery(cb.id, `⚠️ Yêu cầu ${reqId} đã được xử lý trước đó với trạng thái: ${rpcRes?.status}!`);
+          await answerCallbackQuery(cb.id, `⚠️ Yêu cầu ${reqId} đã được xử lý trước đó với trạng thái: ${rpcRes.data?.status}!`);
           await editAllTrackedMessages(
             `msg_track_req_${reqId}`,
             cb.message?.chat?.id,
             cb.message?.message_id,
-            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái hiện tại: <b>${rpcRes?.status}</b>\n• Người xử lý: <b>${currentOperatorName}</b>`
+            `ℹ️ <b>YÊU CẦU ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ!</b>\n\n• Mã yêu cầu: <code>${reqId}</code>\n• Trạng thái hiện tại: <b>${rpcRes.data?.status}</b>\n• Người xử lý: <b>${currentOperatorName}</b>`
           );
           return res.status(200).json({ ok: true });
         }
