@@ -18,15 +18,15 @@ export const INITIAL_CONFIG: AppConfig = {
 
 export const INITIAL_USERS: UserProfile[] = [
   {
-    id: 'admin-vancao',
-    name: 'Van Cao - CCL',
-    code: 'ADMIN-01',
+    id: 'guest',
+    name: 'Chưa đăng nhập',
+    code: '',
     department: '',
-    telegramUsername: '@vancao',
-    telegramId: '5139629652',
-    role: 'admin_hr',
-    isLeader: true,
-    botActive: true,
+    telegramUsername: '',
+    telegramId: '',
+    role: 'unregistered',
+    isLeader: false,
+    botActive: false,
   },
 ];
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { User, CheckCircle2, AlertCircle, X, Send, Pencil, Check } from 'lucide-react';
+import { User, CheckCircle2, AlertCircle, X, Send, Pencil, Check, LogOut } from 'lucide-react';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -8,7 +8,7 @@ interface UserProfileModalProps {
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, updateUserProfile } = useApp();
+  const { currentUser, updateUserProfile, logout } = useApp();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(currentUser.name);
@@ -277,6 +277,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                 className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg transition-colors"
               >
                 Đóng
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  onClose();
+                }}
+                className="w-full py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-rose-200 dark:border-rose-900 rounded-lg cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Đăng xuất khỏi thiết bị này</span>
               </button>
             </div>
           </div>

@@ -119,6 +119,7 @@ interface AppContextType {
   ) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   resetToNewRegistration: () => void;
+  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -148,12 +149,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+    const isInsideTelegram = typeof window !== 'undefined' && Boolean((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id);
     const savedId = safeGetItem(`${STORAGE_KEY}_currentUserId`);
     if (savedId && !MOCK_USER_IDS.has(savedId)) {
+      if (!isInsideTelegram && (savedId === 'admin-vancao' || savedId.includes('5139629652'))) {
+        try { localStorage.removeItem(`${STORAGE_KEY}_currentUserId`); } catch {}
+        return INITIAL_USERS[0];
+      }
       const found = users.find((u) => u.id === savedId);
       if (found) return found;
     }
-    return users[0] || INITIAL_USERS[0];
+    return isInsideTelegram ? (users[0] || INITIAL_USERS[0]) : INITIAL_USERS[0];
   });
 
   const [config, setConfig] = useState<AppConfig>(() => {
@@ -498,6 +504,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             setCurrentUser(unregisteredUser);
             currentUserRef.current = unregisteredUser;
+          }
+        } else {
+          const currentSavedId = safeGetItem(`${STORAGE_KEY}_currentUserId`);
+          if (currentSavedId === 'admin-vancao' || currentUserRef.current?.id === 'admin-vancao' || currentUserRef.current?.telegramId === '5139629652') {
+            try { localStorage.removeItem(`${STORAGE_KEY}_currentUserId`); } catch {}
+            setCurrentUser(INITIAL_USERS[0]);
+            currentUserRef.current = INITIAL_USERS[0];
           }
         }
 
@@ -2600,6 +2613,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Đã xóa hồ sơ nhân sự thành công!' };
   };
 
+  const logout = () => {
+    try {
+      localStorage.removeItem(`${STORAGE_KEY}_currentUserId`);
+      localStorage.removeItem('taxicard_ui_expanded');
+    } catch {}
+    const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
+    const guestUser: UserProfile = {
+      id: `guest-${tg?.id || Date.now()}`,
+      name: tg?.first_name ? `${tg.first_name} ${tg.last_name || ''}`.trim() : 'Chưa đăng nhập',
+      code: '',
+      department: '',
+      telegramUsername: tg?.username ? `@${tg.username}` : '',
+      telegramId: tg?.id ? String(tg.id) : '',
+      role: 'unregistered',
+    };
+    setCurrentUser(guestUser);
+    currentUserRef.current = guestUser;
+  };
+
   const resetToNewRegistration = () => {
     const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; username?: string; first_name?: string; last_name?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
     setCurrentUser({
@@ -2663,6 +2695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUserProfile,
         deleteUser,
         resetToNewRegistration,
+        logout,
       }}
     >
       {children}

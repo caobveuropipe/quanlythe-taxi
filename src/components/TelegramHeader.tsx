@@ -8,6 +8,7 @@ import {
   Globe,
   UserCheck,
   Users,
+  LogOut,
 } from 'lucide-react';
 
 interface TelegramHeaderProps {
@@ -25,7 +26,7 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
   onOpenUserManagement,
   pendingUsersCount = 0,
 }) => {
-  const { currentUser } = useApp();
+  const { currentUser, logout } = useApp();
   const [showProfile, setShowProfile] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -147,6 +148,17 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
               >
                 <User className="w-3.5 h-3.5 text-slate-400" />
                 <span>Xem hồ sơ liên kết</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  logout();
+                }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-t border-slate-100 dark:border-slate-800"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Đăng xuất tài khoản</span>
               </button>
             </div>
           )}
