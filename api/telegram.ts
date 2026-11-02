@@ -40,6 +40,45 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
   }
 }
 
+const escapeTelegramHtml = (value: string) => value
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;');
+
+export async function notifyReleasedCardOwner(
+  requestId: string,
+  cardCode: string | null,
+  reason: string | null,
+  db = supabase,
+  send = sendTelegramMessage
+) {
+  const { data: request, error: requestError } = await db
+    .from('taxi_requests')
+    .select('employee_id, employee_name')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (requestError || !request?.employee_id) {
+    return { sent: false, error: 'Không tìm thấy nhân sự của đơn đã giải phóng.' };
+  }
+
+  const { data: employee, error: employeeError } = await db
+    .from('users')
+    .select('telegram_id')
+    .eq('id', request.employee_id)
+    .maybeSingle();
+  if (employeeError || !employee?.telegram_id) {
+    return { sent: false, error: 'Nhân sự chưa liên kết Telegram.' };
+  }
+
+  const result = await send(
+    employee.telegram_id,
+    `⚠️ <b>THẺ ĐÃ GIỮ CHO BẠN ĐÃ ĐƯỢC GIẢI PHÓNG</b>\n\n• Mã yêu cầu: <code>${escapeTelegramHtml(requestId)}</code>\n• Thẻ: <b>${escapeTelegramHtml(cardCode || 'Chưa xác định')}</b>\n• Lý do: <i>${escapeTelegramHtml(reason || 'Admin giải phóng thẻ trước khi bàn giao')}</i>\n• Trạng thái: <b>Yêu cầu đã kết thúc, thẻ chưa được bàn giao</b>\n\nNếu vẫn cần sử dụng thẻ taxi, vui lòng tạo yêu cầu mới hoặc liên hệ Admin.`
+  );
+  return result?.ok === true
+    ? { sent: true }
+    : { sent: false, error: result?.description || 'Telegram không nhận được thông báo.' };
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text: string) {
   try {
     await fetch(`${getTelegramApi()}/answerCallbackQuery`, {
@@ -219,7 +258,11 @@ export default async function handler(req: any, res: any) {
   }
 
   if (req.method === 'GET') {
-    return res.status(200).json({ status: 'active', bot: 'ADM_thetaxi_bot' });
+    const configured = Boolean(getBotToken() && process.env.TELEGRAM_WEBHOOK_SECRET && SERVICE_ROLE_KEY);
+    return res.status(configured ? 200 : 503).json({
+      status: configured ? 'active' : 'misconfigured',
+      bot: 'ADM_thetaxi_bot',
+    });
   }
 
   if (req.method !== 'POST') {
@@ -304,7 +347,14 @@ export default async function handler(req: any, res: any) {
       if (error) {
         return res.status(400).json({ success: false, code: error.code, message: error.message });
       }
-      return res.status(200).json({ success: true, data });
+      const originRequestId = data?.origin_request_id || update.requestId;
+      const notification = originRequestId
+        ? await notifyReleasedCardOwner(originRequestId, data?.card_code || update.cardCode || null, update.reason || null)
+        : { sent: false, error: 'Không xác định được đơn gốc.' };
+      return res.status(200).json({
+        success: true,
+        data: { ...data, notification_sent: notification.sent, notification_error: notification.error || null },
+      });
     }
 
     return res.status(400).json({ error: 'Unknown custom action' });

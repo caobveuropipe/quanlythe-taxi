@@ -6,7 +6,7 @@ import { X, AlertTriangle, Shield } from 'lucide-react';
 interface ReleaseCardModalProps {
   request: TaxiRequest;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (message: string) => void;
 }
 
 export const ReleaseCardModal: React.FC<ReleaseCardModalProps> = ({
@@ -30,7 +30,7 @@ export const ReleaseCardModal: React.FC<ReleaseCardModalProps> = ({
     try {
       const res = await releaseReservedCard(request.id, reason, currentUser.name);
       if (res.success) {
-        onSuccess();
+        onSuccess(res.message);
         onClose();
       } else {
         setError(res.message);

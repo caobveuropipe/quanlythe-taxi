@@ -1898,7 +1898,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: 'Đã giải phóng thẻ về kho và hủy lượt giữ thẻ thành công.',
+      message: res.data?.notification_sent
+        ? 'Đã giải phóng thẻ và gửi thông báo Telegram cho nhân sự.'
+        : `Đã giải phóng thẻ, nhưng chưa gửi được Telegram cho nhân sự: ${res.data?.notification_error || 'Không rõ nguyên nhân'}`,
     };
   };
 
@@ -1955,9 +1957,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: autoAssignedTo
+      message: `${autoAssignedTo
         ? `Đã nhả thẻ ${cardCode} và tự động gán cho đơn chờ ${autoAssignedTo}.`
-        : `Đã đưa thẻ ${cardCode} về kho sẵn sàng thành công.`,
+        : `Đã đưa thẻ ${cardCode} về kho sẵn sàng thành công.`}${res.data?.notification_sent ? ' Đã báo Telegram cho nhân sự giữ thẻ trước đó.' : ` Chưa báo được Telegram cho nhân sự: ${res.data?.notification_error || 'Không rõ nguyên nhân'}`}`,
     };
   };
 

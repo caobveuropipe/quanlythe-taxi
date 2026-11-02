@@ -1096,8 +1096,8 @@ export const AdminActionQueueView: React.FC<{ focusedRequest?: { id: string; tok
         <ReleaseCardModal
           request={selectedReqForRelease}
           onClose={() => setSelectedReqForRelease(null)}
-          onSuccess={() => {
-            setFeedback({ success: true, message: 'Đã giải phóng thẻ đã giữ về kho.' });
+          onSuccess={(message) => {
+            setFeedback({ success: true, message });
           }}
         />
       )}
