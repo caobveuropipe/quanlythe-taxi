@@ -141,6 +141,17 @@ const MainAppContent: React.FC = () => {
     }
   };
 
+  const visibleToasts = toasts.filter((notification) => {
+    if (notification.destination === 'admin_actions') {
+      if (isAdminOrHR && activeTab === 'actions' && !subView) return false;
+      if (notification.requestId && !requests.some((request) => request.id === notification.requestId && ['pending_admin', 'pending_leader', 'waitlist_cards', 'pending_handover'].includes(request.status))) return false;
+    }
+    if (notification.destination === 'admin_user_approvals' && notification.userId) {
+      return users.some((user) => user.id === notification.userId && user.role === 'pending');
+    }
+    return true;
+  });
+
   return (
     <div className="h-[100dvh] w-full bg-slate-100 text-slate-900 flex flex-col font-sans overflow-hidden">
       {/* Main Viewport Container */}
@@ -153,7 +164,7 @@ const MainAppContent: React.FC = () => {
           }`}
         >
           {/* In-App Realtime Notification Toast */}
-          <InAppNotificationToast notifications={toasts} onDismiss={dismissToast} onOpen={openNotification} />
+          <InAppNotificationToast notifications={visibleToasts} onDismiss={dismissToast} onOpen={openNotification} />
 
           {/* Telegram Mini App Top App Bar (Header mờ kính Floating Dock) */}
           <TelegramHeader

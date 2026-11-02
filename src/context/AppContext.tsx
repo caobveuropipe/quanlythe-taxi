@@ -200,6 +200,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [toasts, setToasts] = useState<InAppToastMessage[]>([]);
+  const notifiedEventsRef = useRef<Map<string, number>>(new Map());
+  const shouldNotifyEvent = useCallback((key: string, isInitial = false) => {
+    const now = Date.now();
+    const previous = notifiedEventsRef.current.get(key);
+    notifiedEventsRef.current.set(key, now);
+    return !isInitial && (!previous || now - previous > 10 * 60 * 1000);
+  }, []);
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -210,7 +217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: Date.now(),
     };
-    setToasts((prev) => [newToast, ...prev].slice(0, 4));
+    setToasts((prev) => [newToast, ...prev].slice(0, 2));
   }, []);
 
   const requestsRef = useRef<TaxiRequest[]>(requests);
@@ -320,19 +327,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const prevPendingIds = new Set(prevUsers.filter((u) => u.role === 'pending').map((u) => u.id));
       const newPending = incomingUsers.filter((u) => u.role === 'pending' && !prevPendingIds.has(u.id));
       for (const u of newPending) {
+        if (!shouldNotifyEvent(`pending-user:${u.id}`, isInitial)) continue;
         triggerInAppToast({
           type: 'info',
           title: 'Thành viên mới đăng ký 👤',
           message: `${u.name} (${u.department || 'Chưa rõ PB'}) đang chờ duyệt tài khoản.`,
           roleTarget: 'admin',
           destination: 'admin_user_approvals',
+          userId: u.id,
         });
       }
     }
 
+    if (isInitial) {
+      incomingUsers.filter((u) => u.role === 'pending').forEach((u) => shouldNotifyEvent(`pending-user:${u.id}`, true));
+    }
+
     setUsers(incomingUsers);
     usersRef.current = incomingUsers;
-  }, [triggerInAppToast]);
+  }, [triggerInAppToast, shouldNotifyEvent]);
 
   const applyRequestsDelta = useCallback((incomingRequests: TaxiRequest[], isInitial = false) => {
     const prevRequests = requestsRef.current;
@@ -347,7 +360,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (!oldReq) {
           // New request created
-          if (!isMyOrder) {
+          if (!isMyOrder && shouldNotifyEvent(`new-request:${req.id}`, isInitial)) {
             // Notify Admin
             if (prevMe.role === 'admin' || prevMe.role === 'admin_hr' || prevMe.role === 'hr') {
               triggerInAppToast({
@@ -443,9 +456,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    if (isInitial) {
+      incomingRequests.forEach((req) => shouldNotifyEvent(`new-request:${req.id}`, true));
+    }
     setRequests(incomingRequests);
     requestsRef.current = incomingRequests;
-  }, [triggerInAppToast]);
+  }, [triggerInAppToast, shouldNotifyEvent]);
 
   // Supabase Realtime & Remote DB Sync
   useEffect(() => {
@@ -919,8 +935,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'pending_admin',
     };
 
-    setRequests((prev) => [newRequest, ...prev]);
-    syncToSupabase(newRequest);
+    try {
+      await supabaseService.upsertRequestChecked(newRequest);
+    } catch (error) {
+      return { success: false, message: `Không thể lưu yêu cầu: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    setRequests((prev) => [newRequest, ...prev.filter((req) => req.id !== newRequest.id)]);
+    requestsRef.current = [newRequest, ...requestsRef.current.filter((req) => req.id !== newRequest.id)];
 
     // Notify all Admins / HR on Telegram with inline approval buttons
     let dbAdminList: any[] = [];
@@ -944,7 +965,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const timeDisplay = formatVietnameseDateTime(newRequest.estimatedStartTime || newRequest.createdAt);
     const relativeNotice = getRelativeTimeNotice(newRequest.estimatedStartTime || newRequest.createdAt);
 
-    const orderText = `🚕 <b>CÓ YÊU CẦU MƯỢN THẺ TAXI MỚI!</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Người mượn: <b>${currentUser.name}</b> (Mã: <code>${currentUser.code}</code>)\n• Bộ phận: <b>${currentUser.department}</b>\n• Leader quản lý: <b>${resolvedLeaderName || 'Chưa cung cấp'}</b>\n• Thời gian đi: <b>${timeDisplay}</b>${relativeNotice ? ` (<i>${relativeNotice}</i>)` : ''}\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n${clientTag?.trim() ? `• Thẻ khách/Dự án: <b>${clientTag.trim()}</b>\n` : ''}\n💳 <i>Kho thẻ: ${availableCardsCount > 0 ? `Còn <b>${availableCardsCount}</b> thẻ sẵn sàng` : '<b>Hết thẻ sẵn sàng</b> (sẽ tự động xếp hàng chờ)'}</i>\n\n👇 <i>Admin có thể bấm duyệt cấp thẻ nhanh hoặc mở Mini App:</i>`;
+    const orderText = `🚕 <b>CÓ YÊU CẦU MƯỢN THẺ TAXI MỚI!</b>\n\n• Mã yêu cầu: <code>${newReqId}</code>\n• Người mượn: <b>${currentUser.name}</b> (Mã: <code>${currentUser.code}</code>)\n• Bộ phận: <b>${currentUser.department}</b>\n• Leader quản lý: <b>${resolvedLeaderName || 'Chưa cung cấp'}</b>\n• Thời gian đi: <b>${timeDisplay}</b>${relativeNotice ? ` (<i>${relativeNotice}</i>)` : ''}\n• Mục đích: <b>${purpose.trim()}</b>\n• Điểm đến: <b>${destination.trim()}</b>\n${clientTag?.trim() ? `• Thẻ khách/Dự án: <b>${clientTag.trim()}</b>\n` : ''}\n💳 <i>Kho thẻ: ${availableCardsCount > 0 ? `Còn <b>${availableCardsCount}</b> thẻ sẵn sàng` : '<b>Hết thẻ sẵn sàng</b> (sẽ tự động xếp hàng chờ)'}</i>\n\n👇 <i>Admin có thể duyệt cấp thẻ trực tiếp bên dưới:</i>`;
 
     const orderReplyMarkup = {
       inline_keyboard: [
@@ -952,10 +973,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${newReqId}` },
           { text: '⭐ Y/c Leader duyệt', callback_data: `forward_leader_${newReqId}` },
           { text: '❌ Từ chối', callback_data: `reject_req_${newReqId}` },
-        ],
-        [
-          { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-          { text: '🌐 Mở qua Web PC', url: 'https://quanly-thetaxi.vercel.app' },
         ],
       ],
     };
@@ -1312,10 +1329,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   [
                     { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${requestId}` },
                     { text: '❌ Từ chối', callback_data: `reject_req_${requestId}` },
-                  ],
-                  [
-                    { text: '📱 Mở Mini App xử lý', web_app: { url: 'https://quanly-thetaxi.vercel.app' } },
-          { text: '🌐 Mở qua Web PC', url: 'https://quanly-thetaxi.vercel.app' },
                   ],
                 ],
               }

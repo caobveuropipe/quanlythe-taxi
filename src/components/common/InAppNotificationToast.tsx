@@ -13,6 +13,7 @@ export interface InAppToastMessage {
   onAction?: () => void;
   destination?: 'admin_actions' | 'admin_user_approvals' | 'leader_approvals' | 'my_requests';
   requestId?: string;
+  userId?: string;
 }
 
 interface InAppNotificationToastProps {

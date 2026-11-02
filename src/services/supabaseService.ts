@@ -210,12 +210,15 @@ export const supabaseService = {
   // Save single request
   async upsertRequest(req: TaxiRequest) {
     try {
-      const row = toDbRequest(req);
-      const { error } = await supabase.from('taxi_requests').upsert(row);
-      if (error) console.warn('Supabase upsertRequest error:', error);
+      await this.upsertRequestChecked(req);
     } catch (e) {
       console.warn('Supabase upsertRequest error:', e);
     }
+  },
+
+  async upsertRequestChecked(req: TaxiRequest) {
+    const { error } = await supabase.from('taxi_requests').upsert(toDbRequest(req));
+    if (error) throw error;
   },
 
   // Save multiple requests (initial seed)

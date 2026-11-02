@@ -127,25 +127,83 @@ async function editAllTrackedMessages(
   }
 }
 
-async function executeAssignCardHelper(params: {
+export async function executeAssignCardHelper(params: {
   requestId: string;
   cardCode?: string | null;
   operatorId?: string | null;
   operatorName?: string;
   isHandover?: boolean;
-}) {
+}, db = supabase) {
   const { requestId, cardCode = null, operatorId = null, operatorName = 'Admin', isHandover = false } = params;
 
-  // 1. Thử gọi RPC nguyên tử assign_taxi_card_atomic
-  const rpcRes = await supabase.rpc('assign_taxi_card_atomic', {
+  // Prefer an explicitly available card for a new approval. The database RPC
+  // still locks and validates the card, so a stale snapshot cannot double-assign it.
+  let preferredCardCode = cardCode;
+  if (!cardCode && !isHandover) {
+    const { data: request } = await db
+      .from('taxi_requests')
+      .select('status')
+      .eq('id', requestId)
+      .maybeSingle();
+    if (request?.status === 'pending_admin' || request?.status === 'waitlist_cards') {
+      const { data: availableCards } = await db
+        .from('taxi_cards')
+        .select('code')
+        .eq('status', 'available')
+        .eq('condition', 'good')
+        .order('code', { ascending: true })
+        .limit(1);
+      preferredCardCode = availableCards?.[0]?.code || null;
+    }
+  }
+
+  const rpcRes = await db.rpc('assign_taxi_card_atomic', {
     p_request_id: requestId,
-    p_card_code: cardCode,
+    p_card_code: preferredCardCode,
     p_operator_id: operatorId,
     p_is_handover: isHandover,
   });
 
   if (!rpcRes.error) {
+    if (!cardCode && !isHandover && rpcRes.data?.result === 'waitlisted') {
+      const { data: availableCards, error: inventoryError } = await db
+        .from('taxi_cards')
+        .select('code')
+        .eq('status', 'available')
+        .eq('condition', 'good')
+        .order('code', { ascending: true })
+        .limit(1);
+      if (inventoryError) {
+        return { success: false, code: inventoryError.code, message: inventoryError.message };
+      }
+      if (availableCards?.length) {
+        const retry = await db.rpc('assign_taxi_card_atomic', {
+          p_request_id: requestId,
+          p_card_code: availableCards[0].code,
+          p_operator_id: operatorId,
+          p_is_handover: false,
+        });
+        if (retry.error) {
+          return { success: false, code: retry.error.code, message: retry.error.message };
+        }
+        if (retry.data?.result !== 'assigned_new' && retry.data?.result !== 'assigned_existing') {
+          return { success: false, code: 'INVENTORY_MISMATCH', message: 'Kho có thẻ rảnh nhưng hệ thống không giữ được thẻ cho đơn. Vui lòng kiểm tra RPC cấp thẻ trên database.' };
+        }
+        return { success: true, data: retry.data };
+      }
+    }
     return { success: true, data: rpcRes.data };
+  }
+
+  if (preferredCardCode && !cardCode && !isHandover && rpcRes.error.code === '55P03') {
+    const fallback = await db.rpc('assign_taxi_card_atomic', {
+      p_request_id: requestId,
+      p_card_code: null,
+      p_operator_id: operatorId,
+      p_is_handover: false,
+    });
+    if (!fallback.error) return { success: true, data: fallback.data };
+    return { success: false, code: fallback.error.code, message: fallback.error.message };
   }
 
   return { success: false, code: rpcRes.error.code, message: rpcRes.error.message };
@@ -299,12 +357,6 @@ export default async function handler(req: any, res: any) {
                     web_app: { url: WEBAPP_URL },
                   },
                 ],
-                [
-                  {
-                    text: '🌐 Mở qua Trình duyệt (PC / Ubuntu)',
-                    url: WEBAPP_URL,
-                  },
-                ],
               ],
             }
           );
@@ -320,12 +372,6 @@ export default async function handler(req: any, res: any) {
                   {
                     text: '🚖 Đăng ký mượn thẻ Taxi',
                     web_app: { url: WEBAPP_URL },
-                  },
-                ],
-                [
-                  {
-                    text: '🌐 Mở qua Trình duyệt (PC / Ubuntu)',
-                    url: WEBAPP_URL,
                   },
                 ],
               ],
@@ -376,8 +422,10 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ ok: true });
       }
 
-      // Phản hồi Telegram tức thì để tắt loading spinner trên nút và khóa click lặp lại
-      answerCallbackQuery(cb.id, '⏳ Đang xử lý...').catch(() => {});
+      // Keep the approval callback open so Telegram can show the actual RPC result.
+      if (!data.startsWith('approve_req_')) {
+        answerCallbackQuery(cb.id, '⏳ Đang xử lý...').catch(() => {});
+      }
 
       if (data.startsWith('approve_user_')) {
         let grantedRole = 'employee';
@@ -833,9 +881,6 @@ export default async function handler(req: any, res: any) {
                     [
                       { text: '✅ Duyệt cấp thẻ', callback_data: `approve_req_${reqId}` },
                       { text: '❌ Từ chối', callback_data: `reject_req_${reqId}` },
-                    ],
-                    [
-                      { text: '📱 Mở Mini App xử lý', web_app: { url: WEBAPP_URL } },
                     ],
                   ],
                 }
