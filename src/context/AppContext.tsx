@@ -124,11 +124,19 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'taxicard_app_data_v3';
+
+function safeGetItem(key: string): string | null {
+  try {
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
 const MOCK_USER_IDS = new Set(['user-01', 'user-02', 'user-03', 'user-04', 'user-05', 'user-06']);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<UserProfile[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
+    const saved = safeGetItem(`${STORAGE_KEY}_users`);
     if (saved) {
       try {
         const parsed: UserProfile[] = JSON.parse(saved);
@@ -140,7 +148,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
-    const savedId = localStorage.getItem(`${STORAGE_KEY}_currentUserId`);
+    const savedId = safeGetItem(`${STORAGE_KEY}_currentUserId`);
     if (savedId && !MOCK_USER_IDS.has(savedId)) {
       const found = users.find((u) => u.id === savedId);
       if (found) return found;
@@ -149,7 +157,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [config, setConfig] = useState<AppConfig>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_config`);
+    const saved = safeGetItem(`${STORAGE_KEY}_config`);
     if (saved) {
       try {
         const parsed: AppConfig = JSON.parse(saved);
@@ -164,12 +172,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [cards, setCards] = useState<TaxiCard[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_cards`);
+    const saved = safeGetItem(`${STORAGE_KEY}_cards`);
     return saved ? JSON.parse(saved) : INITIAL_CARDS;
   });
 
   const [requests, setRequests] = useState<TaxiRequest[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_requests`);
+    const saved = safeGetItem(`${STORAGE_KEY}_requests`);
     const raw: TaxiRequest[] = saved ? JSON.parse(saved) : INITIAL_REQUESTS;
     // Auto-reconcile mock data misassignment for REQ-2026-099
     return raw.map((r) => {
@@ -213,7 +221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeViewMode, setActiveViewMode] = useState<'mobile' | 'responsive'>('mobile');
   const [uiDensityMode, setUiDensityMode] = useState<'standard' | 'minimalist'>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_uiDensityMode`);
+    const saved = safeGetItem(`${STORAGE_KEY}_uiDensityMode`);
     return (saved === 'standard' || saved === 'minimalist') ? saved : 'minimalist';
   });
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {

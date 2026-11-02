@@ -60,7 +60,11 @@ const MainAppContent: React.FC = () => {
       }).Telegram?.WebApp;
       if (tg) {
         tg.ready();
-        tg.expand();
+        // Chỉ gọi expand trên mobile (ios, android); tránh ép resize trên Telegram Desktop Linux làm crash WebKitGTK
+        const platform = (tg as any).platform;
+        if (platform === 'ios' || platform === 'android') {
+          tg.expand?.();
+        }
         tg.setHeaderColor?.('#ffffff');
         tg.setBackgroundColor?.('#f8fafc');
       }
