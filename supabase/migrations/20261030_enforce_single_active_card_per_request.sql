@@ -4,6 +4,8 @@
 --              tự động gán thẻ từ hàng chờ và thiết lập ranh giới bảo mật service_role.
 
 -- 1. Unique Partial Index: Ngăn chặn 1 request giữ > 1 thẻ active (reserved hoặc in_use)
+-- Existing duplicate rows must be reconciled against the physical cards first.
+-- The index intentionally fails rather than silently releasing a card in someone's possession.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_taxi_cards_single_active_request
 ON public.taxi_cards(current_request_id)
 WHERE current_request_id IS NOT NULL AND status IN ('reserved', 'in_use');
@@ -45,6 +47,18 @@ BEGIN
     RAISE EXCEPTION 'Request not found: %', p_request_id USING ERRCODE = 'P0002';
   END IF;
 
+  IF p_is_handover IS TRUE AND v_req.status <> 'pending_handover' THEN
+    IF v_req.status = 'holding_card' AND v_req.actual_card_code = p_card_code THEN
+      RETURN jsonb_build_object('result', 'already_processed', 'status', v_req.status, 'card_code', p_card_code);
+    END IF;
+    RAISE EXCEPTION 'Request % cannot receive a card in status %', p_request_id, v_req.status USING ERRCODE = '55P03';
+  END IF;
+
+  IF p_is_handover IS NOT TRUE AND v_req.status NOT IN ('pending_admin', 'waitlist_cards', 'pending_handover') THEN
+    RETURN jsonb_build_object('result', 'already_processed', 'status', v_req.status,
+      'card_code', COALESCE(v_req.actual_card_code, v_req.reserved_card_code));
+  END IF;
+
   -- ----------------------------------------------------
   -- Nhánh 1: Bàn giao thẻ thực tế tại quầy (p_is_handover = true)
   -- ----------------------------------------------------
@@ -62,14 +76,15 @@ BEGIN
       RAISE EXCEPTION 'Card % not found', p_card_code USING ERRCODE = 'P0002';
     END IF;
 
-    IF v_card.status = 'in_use' AND v_card.current_request_id IS DISTINCT FROM p_request_id THEN
-      RAISE EXCEPTION 'Card % is already in use by request %', p_card_code, v_card.current_request_id USING ERRCODE = '23505';
+    IF v_card.status NOT IN ('available', 'reserved') OR
+       (v_card.status = 'reserved' AND v_card.current_request_id IS DISTINCT FROM p_request_id) THEN
+      RAISE EXCEPTION 'Card % is not available for handover', p_card_code USING ERRCODE = '55P03';
     END IF;
 
     -- Unreserve bất kỳ thẻ cũ nào của đơn này nếu đổi thẻ tại quầy bàn giao
     UPDATE public.taxi_cards
     SET status = 'available', current_request_id = NULL, assigned_to_name = NULL, assigned_to_code = NULL
-    WHERE current_request_id = p_request_id AND code <> p_card_code AND status IN ('reserved', 'in_use');
+    WHERE current_request_id = p_request_id AND code <> p_card_code AND status = 'reserved';
 
     -- Chuyển thẻ sang in_use
     UPDATE public.taxi_cards
@@ -105,6 +120,12 @@ BEGIN
 
     IF v_card.status <> 'available' AND (v_card.current_request_id IS DISTINCT FROM p_request_id OR v_card.status <> 'reserved') THEN
       RAISE EXCEPTION 'Card % is not available (current status: %)', p_card_code, v_card.status USING ERRCODE = '55P03';
+    END IF;
+
+    IF v_card.status = 'reserved' AND v_card.current_request_id = p_request_id AND
+       v_req.status = 'pending_handover' AND v_req.reserved_card_code = p_card_code THEN
+      RETURN jsonb_build_object('result', 'assigned_existing', 'card_code', p_card_code,
+        'status', v_req.status, 'operator_name', v_operator.name);
     END IF;
 
     -- Unreserve bất kỳ thẻ cũ nào của đơn
@@ -347,6 +368,7 @@ DECLARE
   v_temp_origin_id text;
   v_candidate_waitlist_id text;
   v_card record;
+  v_origin_req record;
   v_waitlist_req record;
 BEGIN
   -- Xác thực quyền Admin/Admin HR
@@ -387,6 +409,13 @@ BEGIN
   -- Double-Check dưới lock: Nếu thẻ đã bị đổi chủ trước khi lấy được lock
   IF p_card_code IS NOT NULL AND v_card.current_request_id IS DISTINCT FROM v_temp_origin_id THEN
     RAISE EXCEPTION 'Card assignment changed concurrently, please retry.' USING ERRCODE = 'T5001';
+  END IF;
+
+  SELECT * INTO v_origin_req FROM public.taxi_requests WHERE id = v_temp_origin_id;
+  IF p_action_type NOT IN ('release_reservation', 'release_card_to_waitlist') OR
+     v_card.status <> 'reserved' OR v_card.current_request_id IS DISTINCT FROM v_temp_origin_id OR
+     v_origin_req IS NULL OR v_origin_req.status <> 'pending_handover' THEN
+    RAISE EXCEPTION 'Card % has no releasable reservation', v_card.code USING ERRCODE = '55P03';
   END IF;
 
   -- Cập nhật đơn gốc trong transaction

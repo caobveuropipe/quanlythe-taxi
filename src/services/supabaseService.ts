@@ -423,6 +423,9 @@ async function callProxyRpcWithRetry(
       if (!res.ok) {
         lastErrorCode = json?.code;
         lastErrorMsg = json?.message || json?.error || `Lỗi máy chủ (${res.status})`;
+        if (lastErrorCode === 'PGRST202' || lastErrorCode === '42883') {
+          lastErrorMsg = 'Chức năng cấp/nhả thẻ chưa được cài trên database. Vui lòng báo quản trị hệ thống; thao tác chưa được lưu.';
+        }
 
         if (lastErrorCode && RETRYABLE_CODES.has(lastErrorCode) && attempt < maxRetries) {
           const delay = Math.pow(2, attempt - 1) * 200 + Math.random() * 100;

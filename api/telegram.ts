@@ -147,136 +147,7 @@ async function executeAssignCardHelper(params: {
     return { success: true, data: rpcRes.data };
   }
 
-  // Nếu lỗi không phải do schema cache / function not found, trả về lỗi RPC
-  const isFunctionMissing =
-    rpcRes.error.code === 'PGRST202' ||
-    rpcRes.error.code === '42883' ||
-    rpcRes.error.message?.includes('schema cache') ||
-    rpcRes.error.message?.includes('Could not find the function');
-
-  if (!isFunctionMissing) {
-    return { success: false, code: rpcRes.error.code, message: rpcRes.error.message };
-  }
-
-  // 2. Graceful Fallback: Trực tiếp thao tác bảng DB khi RPC chưa được cài đặt trên Supabase
-  try {
-    const { data: req } = await supabase.from('taxi_requests').select('*').eq('id', requestId).maybeSingle();
-    if (!req) {
-      return { success: false, message: `Không tìm thấy yêu cầu ${requestId}` };
-    }
-
-    const now = new Date().toISOString();
-
-    if (isHandover) {
-      if (!cardCode) return { success: false, message: 'Thiếu mã thẻ bàn giao' };
-      await supabase.from('taxi_cards').update({
-        status: 'in_use',
-        current_request_id: requestId,
-        assigned_to_name: req.employee_name,
-        assigned_to_code: req.employee_code,
-      }).eq('code', cardCode);
-
-      await supabase.from('taxi_requests').update({
-        status: 'holding_card',
-        actual_card_code: cardCode,
-        reserved_card_code: cardCode,
-        handed_over_at: now,
-        handed_over_by: operatorName,
-      }).eq('id', requestId);
-
-      return {
-        success: true,
-        data: { result: 'handed_over', card_code: cardCode, status: 'holding_card', operator_name: operatorName },
-      };
-    }
-
-    if (cardCode) {
-      await supabase.from('taxi_cards').update({
-        status: 'reserved',
-        current_request_id: requestId,
-        assigned_to_name: req.employee_name,
-        assigned_to_code: req.employee_code,
-      }).eq('code', cardCode);
-
-      await supabase.from('taxi_requests').update({
-        status: 'pending_handover',
-        is_waitlisted: false,
-        reserved_card_code: cardCode,
-        admin_approval_status: 'approved',
-        admin_approved_at: now,
-        admin_approver_name: operatorName,
-        handover_ready_at: now,
-      }).eq('id', requestId);
-
-      return {
-        success: true,
-        data: { result: 'assigned_new', card_code: cardCode, status: 'pending_handover', operator_name: operatorName },
-      };
-    }
-
-    // Duyệt nhanh: kiểm tra trạng thái
-    if (['holding_card', 'returned_pending_bill', 'completed', 'card_released', 'cancelled', 'rejected_leader', 'rejected_admin'].includes(req.status)) {
-      return {
-        success: true,
-        data: {
-          result: 'already_processed',
-          status: req.status,
-          card_code: req.actual_card_code || req.reserved_card_code,
-          operator_name: operatorName,
-        },
-      };
-    }
-
-    // Tìm thẻ rảnh
-    const { data: availCards } = await supabase
-      .from('taxi_cards')
-      .select('*')
-      .eq('status', 'available')
-      .order('code', { ascending: true })
-      .limit(1);
-
-    const availCard = availCards?.[0];
-    if (availCard) {
-      await supabase.from('taxi_cards').update({
-        status: 'reserved',
-        current_request_id: requestId,
-        assigned_to_name: req.employee_name,
-        assigned_to_code: req.employee_code,
-      }).eq('code', availCard.code);
-
-      await supabase.from('taxi_requests').update({
-        status: 'pending_handover',
-        is_waitlisted: false,
-        reserved_card_code: availCard.code,
-        admin_approval_status: 'approved',
-        admin_approved_at: now,
-        admin_approver_name: operatorName,
-        handover_ready_at: now,
-      }).eq('id', requestId);
-
-      return {
-        success: true,
-        data: { result: 'assigned_new', card_code: availCard.code, status: 'pending_handover', operator_name: operatorName },
-      };
-    } else {
-      // Hết thẻ rảnh -> Waitlist
-      await supabase.from('taxi_requests').update({
-        status: 'waitlist_cards',
-        is_waitlisted: true,
-        reserved_card_code: null,
-        admin_approval_status: 'approved',
-        admin_approved_at: now,
-        admin_approver_name: operatorName,
-      }).eq('id', requestId);
-
-      return {
-        success: true,
-        data: { result: 'waitlisted', card_code: null, status: 'waitlist_cards', operator_name: operatorName },
-      };
-    }
-  } catch (err: any) {
-    return { success: false, message: err?.message || 'Lỗi fallback duyệt cấp thẻ' };
-  }
+  return { success: false, code: rpcRes.error.code, message: rpcRes.error.message };
 }
 
 export default async function handler(req: any, res: any) {
@@ -340,7 +211,7 @@ export default async function handler(req: any, res: any) {
       const result = await executeAssignCardHelper({
         requestId: update.requestId,
         cardCode: update.cardCode || null,
-        operatorId: update.operatorId || authenticatedTgId,
+        operatorId: authenticatedTgId,
         operatorName: update.operatorName || 'Admin',
         isHandover: Boolean(update.isHandover),
       });
@@ -355,7 +226,7 @@ export default async function handler(req: any, res: any) {
       const { data, error } = await supabase.rpc('cancel_taxi_request_atomic', {
         p_request_id: update.requestId,
         p_reason: update.reason,
-        p_operator_id: update.operatorId || authenticatedTgId,
+        p_operator_id: authenticatedTgId,
       });
       if (error) {
         return res.status(400).json({ success: false, code: error.code, message: error.message });
@@ -368,7 +239,7 @@ export default async function handler(req: any, res: any) {
         p_request_id: update.requestId || null,
         p_card_code: update.cardCode || null,
         p_reason: update.reason || null,
-        p_operator_id: update.operatorId || authenticatedTgId,
+        p_operator_id: authenticatedTgId,
         p_action_type: update.actionType || 'release_reservation',
       });
       if (error) {
@@ -643,7 +514,12 @@ export default async function handler(req: any, res: any) {
           return res.status(200).json({ ok: true });
         }
 
-        if (result === 'assigned_new' || result === 'assigned_existing') {
+        if (result === 'assigned_existing') {
+          await answerCallbackQuery(cb.id, `ℹ️ Yêu cầu ${reqId} đã được giữ thẻ ${assignedCardCode} trước đó.`);
+          return res.status(200).json({ ok: true });
+        }
+
+        if (result === 'assigned_new') {
           await answerCallbackQuery(cb.id, `✅ Đã duyệt cấp thẻ ${assignedCardCode}!`);
 
           // Sửa tin nhắn của TẤT CẢ các Admin và gỡ sạch nút bấm (keepTracker = true)

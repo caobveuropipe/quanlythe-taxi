@@ -519,7 +519,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (dbCards && dbCards.length > 0) {
           setCards(dbCards);
           cardsRef.current = dbCards;
-        } else {
+        } else if (dbCards && dbCards.length === 0) {
           // If remote is empty, seed it
           await supabaseService.upsertCards(INITIAL_CARDS);
         }
@@ -528,7 +528,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dbRequests = await supabaseService.getRequests();
         if (dbRequests && dbRequests.length > 0) {
           applyRequestsDelta(dbRequests, true);
-        } else {
+        } else if (dbRequests && dbRequests.length === 0) {
           // If remote is empty, seed it
           await supabaseService.upsertRequests(INITIAL_REQUESTS);
         }
@@ -1503,13 +1503,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = requests.find((r) => r.id === requestId);
     if (!target) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    let res = await supabaseService.assignCardAtomic(requestId, undefined, currentUser.id, false);
-    if (!res.success && (res.message?.includes('schema cache') || res.message?.includes('assign_taxi_card_atomic') || res.message?.includes('Could not find the function'))) {
-      const availCard = cardsRef.current.find((c) => c.status === 'available');
-      res = availCard
-        ? { success: true, data: { result: 'assigned_new', card_code: availCard.code, operator_name: currentUser.name } }
-        : { success: true, data: { result: 'waitlisted', card_code: null, operator_name: currentUser.name } };
-    }
+    const res = await supabaseService.assignCardAtomic(requestId, undefined, currentUser.id, false);
     if (!res.success) {
       return { success: false, message: res.message || 'Lỗi duyệt cấp thẻ' };
     }
@@ -1522,7 +1516,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true, message: 'Yêu cầu đã được xử lý trước đó.' };
     }
 
-    if (result === 'assigned_new' || result === 'assigned_existing') {
+    if (result === 'assigned_existing') {
+      return { success: true, message: `Yêu cầu đã được giữ thẻ ${assignedCode} trước đó.` };
+    }
+
+    if (result === 'assigned_new') {
       setCards((prev) =>
         prev.map((c) =>
           c.code === assignedCode
@@ -1704,12 +1702,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    let res = await supabaseService.assignCardAtomic(requestId, cardCode, currentUser.id, false);
-    if (!res.success && (res.message?.includes('schema cache') || res.message?.includes('assign_taxi_card_atomic') || res.message?.includes('Could not find the function'))) {
-      res = { success: true, data: { result: 'assigned_new', card_code: cardCode, operator_name: currentUser.name } };
-    }
+    const res = await supabaseService.assignCardAtomic(requestId, cardCode, currentUser.id, false);
     if (!res.success) {
       return { success: false, message: res.message || `Thẻ ${cardCode} hiện không thể cấp.` };
+    }
+
+    if (res.data?.result === 'assigned_existing' || res.data?.result === 'already_processed') {
+      return { success: true, message: 'Yêu cầu đã được xử lý trước đó.' };
     }
 
     const assignedCode = res.data?.card_code || cardCode;
@@ -1753,12 +1752,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetReq = requests.find((r) => r.id === requestId);
     if (!targetReq) return { success: false, message: 'Không tìm thấy yêu cầu.' };
 
-    let res = await supabaseService.assignCardAtomic(requestId, actualCardCode, currentUser.id, true);
-    if (!res.success && (res.message?.includes('schema cache') || res.message?.includes('assign_taxi_card_atomic') || res.message?.includes('Could not find the function'))) {
-      res = { success: true, data: { result: 'handed_over', card_code: actualCardCode, operator_name: operatorName } };
-    }
+    const res = await supabaseService.assignCardAtomic(requestId, actualCardCode, currentUser.id, true);
     if (!res.success) {
       return { success: false, message: res.message || 'Lỗi bàn giao thẻ' };
+    }
+
+    if (res.data?.result === 'already_processed') {
+      return { success: true, message: 'Thẻ đã được bàn giao trước đó.' };
     }
 
     const assignedCode = res.data?.card_code || actualCardCode;
@@ -1886,7 +1886,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const card = cardsRef.current.find((c) => c.id === cardId || c.code === cardId);
     const cardCode = card?.code || cardId;
 
-    const res = await supabaseService.releaseCardAtomic(undefined, cardCode, reason, currentUser.id, 'release_card_to_waitlist');
+    const res = await supabaseService.releaseCardAtomic(undefined, cardCode, reason, currentUser.id, 'release_reservation');
     if (!res.success) {
       return { success: false, message: res.message || 'Lỗi nhả thẻ về kho' };
     }
@@ -1908,7 +1908,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRequests((prev) =>
       prev.map((req) => {
         if (originRequestId && req.id === originRequestId) {
-          return { ...req, status: 'waitlist_cards', isWaitlisted: true, reservedCardCode: undefined };
+          return { ...req, status: 'card_released', isWaitlisted: false, reservedCardCode: undefined };
         }
         if (autoAssignedTo && req.id === autoAssignedTo) {
           return { ...req, status: 'pending_handover', isWaitlisted: false, reservedCardCode: cardCode };
