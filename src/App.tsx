@@ -14,30 +14,13 @@ import { UserOnboardingView } from './components/auth/UserOnboardingView';
 import { AdminUserApprovalModal } from './components/admin/AdminUserApprovalModal';
 import { AdminUserManagementView } from './components/admin/AdminUserManagementView';
 import { AnnouncementPopup } from './components/common/AnnouncementPopup';
-import { LayoutProvider } from './context/LayoutContext';
 import {
   FilePlus,
   ListFilter,
   CheckSquare,
   CreditCard,
   BarChart3,
-  Minimize2,
 } from 'lucide-react';
-
-/** Trả về true khi viewport >= query (dùng để bật giao diện PC) */
-const useMediaQuery = (query: string): boolean => {
-  const [matches, setMatches] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.matchMedia(query).matches : false
-  );
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
-    setMatches(mql.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, [query]);
-  return matches;
-};
 
 const MainAppContent: React.FC = () => {
   const { currentUser, users, config, requests, activeViewMode, toasts, dismissToast } = useApp();
@@ -50,9 +33,6 @@ const MainAppContent: React.FC = () => {
           WebApp?: {
             ready: () => void;
             expand: () => void;
-            requestFullscreen?: () => void;
-            exitFullscreen?: () => void;
-            isFullscreen?: boolean;
             setHeaderColor?: (color: string) => void;
             setBackgroundColor?: (color: string) => void;
           };
@@ -60,11 +40,7 @@ const MainAppContent: React.FC = () => {
       }).Telegram?.WebApp;
       if (tg) {
         tg.ready();
-        // Chỉ gọi expand trên mobile (ios, android); tránh ép resize trên Telegram Desktop Linux làm crash WebKitGTK
-        const platform = (tg as any).platform;
-        if (platform === 'ios' || platform === 'android') {
-          tg.expand?.();
-        }
+        tg.expand();
         tg.setHeaderColor?.('#ffffff');
         tg.setBackgroundColor?.('#f8fafc');
       }
@@ -78,41 +54,6 @@ const MainAppContent: React.FC = () => {
   const [subView, setSubView] = useState<'settings' | 'web_portal' | 'user_management' | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState<boolean>(false);
   const [showAnnouncement, setShowAnnouncement] = useState<boolean>(false);
-
-  // Chế độ mở rộng giao diện PC:
-  // - Nếu màn hình là Desktop/Web PC (>= 1024px) -> LUÔN LUÔN tự động mở rộng 100%, không cần bấm gì.
-  // - Người dùng vẫn có thể bấm nút để chuyển đổi thủ công nếu muốn.
-  const isDesktopScreen = useMediaQuery('(min-width: 1024px)');
-  const [manualExpandOverride, setManualExpandOverride] = useState<boolean | null>(null);
-
-  const isWide = manualExpandOverride !== null ? manualExpandOverride : isDesktopScreen;
-  const toggleExpanded = () => {
-    setManualExpandOverride(!isWide);
-  };
-
-  // Sync fullscreen với Telegram Desktop khi người dùng bấm nút mở rộng (tránh gọi tự động khi mount làm crash Webview Linux)
-  useEffect(() => {
-    try {
-      const tg = (window as unknown as {
-        Telegram?: {
-          WebApp?: {
-            requestFullscreen?: () => void;
-            exitFullscreen?: () => void;
-            isFullscreen?: boolean;
-          };
-        };
-      }).Telegram?.WebApp;
-      if (tg && manualExpandOverride !== null) {
-        if (isWide && tg.requestFullscreen) {
-          tg.requestFullscreen();
-        } else if (!isWide && tg.exitFullscreen && tg.isFullscreen) {
-          tg.exitFullscreen();
-        }
-      }
-    } catch (e) {
-      console.warn('Telegram Fullscreen toggle warning:', e);
-    }
-  }, [isWide, manualExpandOverride]);
 
   const isAdminOrHR =
     currentUser.role === 'admin' ||
@@ -172,100 +113,15 @@ const MainAppContent: React.FC = () => {
     )
   ).length;
 
-  // Tab "Đăng ký": PC mở rộng hiển thị form (trái) + danh sách yêu cầu của tôi (phải)
-  const registerTab = isWide ? (
-    <div className="grid grid-cols-1 md:grid-cols-[380px_minmax(0,1fr)] gap-6 p-4 sm:p-6 max-w-6xl mx-auto items-start">
-      <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
-      <div className="min-w-0">
-        <h2 className="text-sm font-bold text-slate-800 mb-3">Yêu cầu của tôi</h2>
-        <EmployeeRequestsView />
-      </div>
-    </div>
-  ) : (
-    <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
-  );
-
-  const requestsTab = isWide ? (
-    <div className="p-6 max-w-3xl mx-auto">
-      <EmployeeRequestsView />
-    </div>
-  ) : (
-    <EmployeeRequestsView />
-  );
-
-  // Menu sidebar (PC mở rộng) theo vai trò - đồng bộ với dock mobile
-  const sidebarItems: { key: string; label: string; Icon: React.ElementType; badge?: number }[] = isAdminOrHR
-    ? [
-        { key: 'actions', label: 'Cần xử lý', Icon: CheckSquare, badge: adminActionCount },
-        { key: 'inventory', label: 'Kho thẻ', Icon: CreditCard },
-        { key: 'reports', label: 'Báo cáo', Icon: BarChart3 },
-      ]
-    : [
-        ...(isLeader
-          ? [{ key: 'leader_approvals', label: 'Duyệt', Icon: CheckSquare, badge: pendingLeaderCount }]
-          : []),
-        { key: 'register', label: 'Đăng ký', Icon: FilePlus },
-        { key: 'requests', label: 'Yêu cầu', Icon: ListFilter },
-      ];
-
   return (
-    <LayoutProvider isWide={isWide}>
     <div className="h-[100dvh] w-full bg-slate-100 text-slate-900 flex flex-col font-sans overflow-hidden">
       {/* Main Viewport Container */}
-      <main
-        className={`flex-1 flex justify-center items-stretch h-full overflow-hidden ${
-          isWide ? 'p-0' : 'p-0 sm:p-4'
-        }`}
-      >
-        {/* Sidebar (chỉ PC mở rộng) */}
-        {isWide && !isPendingOrRejected && (
-          <aside className="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <div className="text-sm font-extrabold text-slate-900">TaxiCard</div>
-              <div className="text-[11px] text-slate-400">Quản lý thẻ taxi nội bộ</div>
-            </div>
-            <nav className="flex-1 p-3 space-y-1">
-              {sidebarItems.map(({ key, label, Icon, badge }) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setSubView(null);
-                    setActiveTab(key);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                    !subView && activeTab === key
-                      ? 'bg-blue-600 text-white font-bold shadow-md'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="flex-1 text-left">{label}</span>
-                  {!!badge && badge > 0 && (
-                    <span className="px-1.5 bg-rose-500 text-white font-mono text-[10px] font-bold rounded-full">
-                      {badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </nav>
-            <button
-              onClick={toggleExpanded}
-              className="m-3 px-3 py-2 rounded-xl text-xs text-slate-500 hover:bg-slate-100 flex items-center gap-2"
-            >
-              <Minimize2 className="w-3.5 h-3.5" />
-              <span>Thu gọn về Mini App</span>
-            </button>
-          </aside>
-        )}
+      <main className="flex-1 flex justify-center items-stretch h-full overflow-hidden p-0 sm:p-4">
         <div
-          className={`bg-white flex flex-col h-full relative ${
-            isWide
-              ? 'flex-1 min-w-0'
-              : `w-full ${
-                  activeViewMode === 'mobile'
-                    ? 'max-w-[480px] sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200/90'
-                    : 'max-w-4xl sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200'
-                }`
+          className={`w-full bg-white flex flex-col h-full relative ${
+            activeViewMode === 'mobile'
+              ? 'max-w-[480px] sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200/90'
+              : 'max-w-4xl sm:rounded-2xl sm:shadow-2xl sm:border border-slate-200'
           }`}
         >
           {/* In-App Realtime Notification Toast */}
@@ -278,8 +134,6 @@ const MainAppContent: React.FC = () => {
             onOpenUserApprovals={() => setShowApprovalModal(true)}
             onOpenUserManagement={() => setSubView('user_management')}
             pendingUsersCount={pendingUsersCount}
-            isExpanded={isWide}
-            onToggleExpand={toggleExpanded}
           />
 
           {/* Admin User Approval Modal */}
@@ -333,10 +187,10 @@ const MainAppContent: React.FC = () => {
               {!isAdminOrHR && !isLeader && (
                 <>
                   {activeTab === 'register' && (
-                    registerTab
+                    <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
                   )}
                   {activeTab === 'requests' && (
-                    requestsTab
+                    <EmployeeRequestsView />
                   )}
                 </>
               )}
@@ -346,10 +200,10 @@ const MainAppContent: React.FC = () => {
                 <>
                   {activeTab === 'leader_approvals' && <LeaderApprovalsView />}
                   {activeTab === 'register' && (
-                    registerTab
+                    <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
                   )}
                   {activeTab === 'requests' && (
-                    requestsTab
+                    <EmployeeRequestsView />
                   )}
                 </>
               )}
@@ -361,10 +215,10 @@ const MainAppContent: React.FC = () => {
                   {activeTab === 'inventory' && <AdminInventoryView />}
                   {activeTab === 'reports' && <AdminReportsView />}
                   {activeTab === 'register' && (
-                    registerTab
+                    <EmployeeRegisterView onGoToRequests={() => setActiveTab('requests')} />
                   )}
                   {activeTab === 'requests' && (
-                    requestsTab
+                    <EmployeeRequestsView />
                   )}
                 </>
               )}
@@ -376,7 +230,7 @@ const MainAppContent: React.FC = () => {
               - Neo chính xác ở đáy màn hình: fixed bottom-3 sm:bottom-4
               - Tự động thích ứng an toàn trên Mobile lẫn Desktop
               ======================================================== */}
-          {!subView && !isPendingOrRejected && !isWide && (
+          {!subView && !isPendingOrRejected && (
             <div className="fixed bottom-3 sm:bottom-4 inset-x-0 z-40 pointer-events-none px-3">
               <nav className="pointer-events-auto max-w-[390px] sm:max-w-md mx-auto bg-white/95 backdrop-blur-xl text-slate-700 rounded-full p-1.5 shadow-xl border border-slate-200/90 flex items-center justify-around ring-1 ring-slate-900/5">
                 {/* Employee Dock (2 tabs) */}
@@ -500,7 +354,6 @@ const MainAppContent: React.FC = () => {
         </div>
       </main>
     </div>
-    </LayoutProvider>
   );
 };
 

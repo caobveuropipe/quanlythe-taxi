@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useLayout } from '../../context/LayoutContext';
 import { TaxiRequest } from '../../types';
 import {
   CreditCard,
@@ -19,7 +18,6 @@ import { formatVietnameseDateTime, getRelativeTimeNotice } from '../../utils/dat
 
 export const EmployeeRequestsView: React.FC = () => {
   const { currentUser, requests, cancelRequest, respondYieldCard } = useApp();
-  const { isWide } = useLayout();
   const [selectedRequest, setSelectedRequest] = useState<TaxiRequest | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,7 +91,7 @@ export const EmployeeRequestsView: React.FC = () => {
   };
 
   return (
-    <div className={isWide ? 'space-y-3' : 'p-4 space-y-3 max-w-md mx-auto'}>
+    <div className="p-4 space-y-3 max-w-md mx-auto">
       {/* 1. Hero Card if user is holding a physical taxi card */}
       {holdingRequest && (
         <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-600/20 space-y-2 animate-in fade-in">

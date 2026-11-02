@@ -8,9 +8,6 @@ import {
   Globe,
   UserCheck,
   Users,
-  Maximize2,
-  Minimize2,
-  ExternalLink,
 } from 'lucide-react';
 
 interface TelegramHeaderProps {
@@ -19,8 +16,6 @@ interface TelegramHeaderProps {
   onOpenUserApprovals?: () => void;
   onOpenUserManagement?: () => void;
   pendingUsersCount?: number;
-  isExpanded?: boolean;
-  onToggleExpand?: () => void;
 }
 
 export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
@@ -29,8 +24,6 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
   onOpenUserApprovals,
   onOpenUserManagement,
   pendingUsersCount = 0,
-  isExpanded = false,
-  onToggleExpand,
 }) => {
   const { currentUser } = useApp();
   const [showProfile, setShowProfile] = useState(false);
@@ -38,26 +31,6 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
 
   const isAdminOrHR =
     currentUser.role === 'admin' || currentUser.role === 'admin_hr' || currentUser.role === 'hr';
-
-  const handleOpenExternalBrowser = () => {
-    try {
-      const url = window.location.href;
-      const tg = (window as unknown as {
-        Telegram?: {
-          WebApp?: {
-            openLink?: (url: string) => void;
-          };
-        };
-      }).Telegram?.WebApp;
-      if (tg?.openLink) {
-        tg.openLink(url);
-      } else {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
-    } catch {
-      window.open(window.location.href, '_blank', 'noopener,noreferrer');
-    }
-  };
 
   return (
     <>
@@ -96,27 +69,6 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
               <span>Duyệt ({pendingUsersCount})</span>
             </button>
           )}
-
-          {/* Nút mở rộng / thu gọn - luôn hiển thị trên PC/Desktop app */}
-          {onToggleExpand && (
-            <button
-              onClick={onToggleExpand}
-              title={isExpanded ? 'Thu gọn về dạng thẻ Mini App' : 'Mở rộng giao diện PC'}
-              className="flex h-7 px-2 items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
-            >
-              {isExpanded ? <Minimize2 className="w-3.5 h-3.5 text-blue-600" /> : <Maximize2 className="w-3.5 h-3.5 text-blue-600" />}
-              <span className="hidden sm:inline">{isExpanded ? 'Thu gọn' : 'Mở rộng'}</span>
-            </button>
-          )}
-
-          {/* Nút mở bằng trình duyệt ngoài (Chrome/Edge) */}
-          <button
-            onClick={handleOpenExternalBrowser}
-            title="Mở ra trình duyệt ngoài (Chrome / Edge / Cốc Cốc)"
-            className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
 
           <button
             onClick={() => setShowMenu(!showMenu)}
@@ -185,17 +137,6 @@ export const TelegramHeader: React.FC<TelegramHeaderProps> = ({
                   </button>
                 </>
               )}
-
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  handleOpenExternalBrowser();
-                }}
-                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
-                <span>Mở trong trình duyệt web</span>
-              </button>
 
               <button
                 onClick={() => {
