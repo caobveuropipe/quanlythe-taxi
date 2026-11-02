@@ -38,7 +38,7 @@ BEGIN
     AND status IN ('reserved', 'in_use')
     AND code NOT IN ('0006', '3571');
 
-  IF v_request.status <> 'pending_handover'
+  IF v_request.status NOT IN ('pending_handover', 'waitlist_cards')
      OR v_request.actual_card_code IS NOT NULL
      OR v_request.handed_over_at IS NOT NULL
      OR v_card_count <> 2
